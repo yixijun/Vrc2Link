@@ -15,12 +15,12 @@ Set port: `PORT=8080 npm start`
 
 ## Endpoints
 
-### `GET /api/parse?url=<encoded>`
+### `GET /a?url=<encoded>`
 
 Returns JSON with all streams, metadata, and quality options.
 
 ```
-curl "http://localhost:3000/api/parse?url=https://www.bilibili.com/video/BV1xx411c7mD"
+curl "http://localhost:3000/a?url=https://www.bilibili.com/video/BV1xx411c7mD"
 ```
 
 ### `GET /r?url=<encoded>`
