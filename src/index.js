@@ -99,41 +99,44 @@ function homePage() {
 <h2>JSON 解析</h2>
 <div class="card">
 <h3><span class="badge get">GET</span> /a</h3>
-<pre>/a/&lt;链接&gt;?cookie=&lt;可选&gt;</pre>
+<pre>/a?cookie=&lt;可选&gt;&amp;url=&lt;链接&gt;</pre>
 <p>返回完整 JSON：标题、作者、封面、所有可用画质的 CDN 直链。</p>
 </div>
 
 <h3>示例</h3>
 
 <p><strong>B站视频</strong></p>
-<pre>/a/https://www.bilibili.com/video/BV1xx411c7mD</pre>
+<pre>/a?url=https://www.bilibili.com/video/BV1xx411c7mD</pre>
 
 <p><strong>B站直播</strong></p>
-<pre>/a/https://live.bilibili.com/6</pre>
+<pre>/a?url=https://live.bilibili.com/6</pre>
 
 <p><strong>网易云单曲</strong></p>
-<pre>/a/https://music.163.com/song?id=5365570</pre>
+<pre>/a?url=https://music.163.com/song?id=5365570</pre>
 
 <p><strong>网易云 MV</strong></p>
-<pre>/a/https://music.163.com/mv?id=5365570</pre>
+<pre>/a?url=https://music.163.com/mv?id=5365570</pre>
 
-<p><strong>短链接 + Cookie</strong></p>
-<pre>/a/https://b23.tv/xxxxx?cookie=SESSDATA=xxx</pre>
+<p><strong>带 Cookie 解析高画质</strong></p>
+<pre>/a?cookie=SESSDATA=xxx&amp;url=https://b23.tv/xxxxx</pre>
 
 <!-- ===== Redirect ===== -->
 <h2>直链跳转</h2>
 <div class="card">
 <h3><span class="badge get">GET</span> /r</h3>
-<pre>/r/&lt;链接&gt;?quality=&lt;可选&gt;</pre>
+<pre>/r?quality=&lt;可选&gt;&amp;url=&lt;链接&gt;</pre>
 <p>302 跳转到最佳画质的 CDN 直链。<strong>直接粘贴到 VRChat 播放器输入框即可。</strong></p>
 </div>
 
 <h3>示例</h3>
-<pre>/r/https://www.bilibili.com/video/BV1xx411c7mD</pre>
+<pre>/r?url=https://www.bilibili.com/video/BV1xx411c7mD</pre>
 <p style="color:#999;font-size:0.9em">→ 自动选最高可用画质（2K 封顶），302 跳到 CDN 直链，播放器开始播放。</p>
 
 <p><strong>指定画质</strong></p>
-<pre>/r/https://www.bilibili.com/video/BV1xx411c7mD?quality=720p</pre>
+<pre>/r?quality=720p&amp;url=https://www.bilibili.com/video/BV1xx411c7mD</pre>
+
+<p><strong>带 Cookie</strong></p>
+<pre>/r?cookie=SESSDATA=xxx&amp;quality=1080p&amp;url=https://www.bilibili.com/video/BV1xx411c7mD</pre>
 
 <!-- ===== Supported ===== -->
 <h2>支持的平台 & 画质</h2>
@@ -147,7 +150,7 @@ function homePage() {
 
 <div class="tip">
 <strong>VRChat 使用技巧</strong><br>
-把 <code>/r/链接</code> 粘贴到播放器输入框。直链有时效性，过期后重新解析即可。<br>
+把 <code>/r?url=链接</code> 粘贴到播放器输入框。直链有时效性，过期后重新解析即可。<br>
 直播用 m3u8，播放器需支持 HLS（多数 Unity 播放器 Prefab 支持）。
 </div>
 
