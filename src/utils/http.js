@@ -8,9 +8,17 @@ const MAX_RETRIES = 2;
 const DEFAULT_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
 
-const PLATFORM_REFERERS = {
-  bilibili: 'https://www.bilibili.com',
-  netease: 'https://music.163.com',
+const PLATFORM_CONFIG = {
+  bilibili: {
+    referer: 'https://www.bilibili.com/',
+    origin: 'https://www.bilibili.com',
+    host: 'api.bilibili.com',
+  },
+  netease: {
+    referer: 'https://music.163.com/',
+    origin: 'https://music.163.com',
+    host: 'music.163.com',
+  },
 };
 
 /**
@@ -24,24 +32,36 @@ export async function fetchWithRetry(url, options = {}) {
   const maxRetries = MAX_RETRIES;
 
   const headers = new Headers(fetchOptions.headers || {});
+  const cfg = platform && PLATFORM_CONFIG[platform];
 
   // Set default UA if not provided
   if (!headers.has('User-Agent')) {
     headers.set('User-Agent', DEFAULT_UA);
   }
 
-  // Set platform referer
-  if (platform && PLATFORM_REFERERS[platform] && !headers.has('Referer')) {
-    headers.set('Referer', PLATFORM_REFERERS[platform]);
+  // Set platform-specific browser headers
+  if (cfg) {
+    if (!headers.has('Referer')) {
+      headers.set('Referer', cfg.referer);
+    }
+    if (!headers.has('Origin')) {
+      headers.set('Origin', cfg.origin);
+    }
+    if (!headers.has('Host')) {
+      headers.set('Host', cfg.host);
+    }
+    if (!headers.has('Accept')) {
+      headers.set('Accept', 'application/json, text/plain, */*');
+    }
+    if (!headers.has('Accept-Language')) {
+      headers.set('Accept-Language', 'zh-CN,zh;q=0.9,en;q=0.8');
+    }
   }
 
-  // Forward user's real IP to upstream for geo-optimized CDN selection
-  if (forwardIp && !headers.has('X-Forwarded-For')) {
+  // Forward user's real IP for CDN geo-selection (only for CDN requests, not API)
+  // The 'forwardIp' flag is passed but we only attach XFF to CDN hosts, not API calls
+  if (forwardIp && url.includes('upos-') && !headers.has('X-Forwarded-For')) {
     headers.set('X-Forwarded-For', forwardIp);
-    // Some CDNs also look at this header
-    if (!headers.has('X-Real-IP')) {
-      headers.set('X-Real-IP', forwardIp);
-    }
   }
 
   let lastError;
