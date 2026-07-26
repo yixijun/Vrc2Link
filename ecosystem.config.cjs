@@ -4,7 +4,7 @@ module.exports = {
     script: 'server.js',
     instances: 1,
     exec_mode: 'fork',
-    env: { PORT: 8889 },
+    env: { PORT: 7890 },
     log_date_format: 'YYYY-MM-DD HH:mm:ss',
     error_file: './logs/error.log',
     out_file: './logs/out.log',
