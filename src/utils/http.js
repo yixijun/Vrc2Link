@@ -12,12 +12,10 @@ const PLATFORM_CONFIG = {
   bilibili: {
     referer: 'https://www.bilibili.com/',
     origin: 'https://www.bilibili.com',
-    host: 'api.bilibili.com',
   },
   netease: {
     referer: 'https://music.163.com/',
     origin: 'https://music.163.com',
-    host: 'music.163.com',
   },
 };
 
@@ -46,9 +44,6 @@ export async function fetchWithRetry(url, options = {}) {
     }
     if (!headers.has('Origin')) {
       headers.set('Origin', cfg.origin);
-    }
-    if (!headers.has('Host')) {
-      headers.set('Host', cfg.host);
     }
     if (!headers.has('Accept')) {
       headers.set('Accept', 'application/json, text/plain, */*');
