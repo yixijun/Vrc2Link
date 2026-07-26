@@ -148,8 +148,8 @@ function homePage() {
 
 <div class="tip">
 <strong>VRChat 使用技巧</strong><br>
-把 <code>/r?url=链接</code> 粘贴到播放器输入框。直链有时效性（几小时），过期后重新解析即可。<br>
-直播用 m3u8 格式，播放器需支持 HLS（多数 Unity 播放器 Prefab 支持）。
+把 <code>/r?url=链接</code> 粘贴到播放器输入框。直链有时效性，过期后重新解析即可。<br>
+直播用 m3u8，播放器需支持 HLS（多数 Unity 播放器 Prefab 支持）。
 </div>
 
 <!-- ===== Footer ===== -->
