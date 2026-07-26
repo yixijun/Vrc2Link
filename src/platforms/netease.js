@@ -9,7 +9,7 @@ import { neteaseQuality, neteaseMvQuality } from '../utils/quality.js';
  * Helper: fetch JSON from an API endpoint.
  */
 async function fetchApiJson(url, options = {}) {
-  const { cookie, forwardIp } = options;
+  const { cookie, forwardIp, proxy } = options;
   const headers = {};
   if (cookie) headers.Cookie = cookie;
 
@@ -17,6 +17,7 @@ async function fetchApiJson(url, options = {}) {
     platform: 'netease',
     mode: 'api',
     forwardIp,
+    proxy,
     headers,
   });
 
@@ -30,12 +31,12 @@ async function fetchApiJson(url, options = {}) {
 // ---- Song parsing ----
 
 export async function parseSong(songId, options = {}) {
-  const { cookie = '', forwardIp } = options;
+  const { cookie = '', forwardIp, proxy } = options;
 
   // Step 1: Get song detail
   const detailData = await fetchApiJson(
     `https://music.163.com/api/song/detail?ids=[${songId}]`,
-    { cookie, forwardIp }
+    { cookie, forwardIp, proxy }
   );
 
   const song = detailData?.songs?.[0];
@@ -58,7 +59,7 @@ export async function parseSong(songId, options = {}) {
     try {
       const playerData = await fetchApiJson(
         `https://music.163.com/api/song/enhance/player/url?id=${songId}&ids=[${songId}]&br=${br}`,
-        { cookie, forwardIp }
+        { cookie, forwardIp, proxy }
       );
 
       const url = playerData?.data?.[0]?.url;
@@ -108,12 +109,12 @@ export async function parseSong(songId, options = {}) {
 // ---- MV parsing ----
 
 export async function parseMv(mvId, options = {}) {
-  const { cookie = '', forwardIp } = options;
+  const { cookie = '', forwardIp, proxy } = options;
 
   // Step 1: Get MV detail
   const detailData = await fetchApiJson(
     `https://music.163.com/api/mv/detail?id=${mvId}`,
-    { cookie, forwardIp }
+    { cookie, forwardIp, proxy }
   );
 
   const mvData = detailData?.data;
@@ -134,7 +135,7 @@ export async function parseMv(mvId, options = {}) {
     try {
       const urlData = await fetchApiJson(
         `https://music.163.com/api/mv/url?id=${mvId}&r=${r}`,
-        { cookie, forwardIp }
+        { cookie, forwardIp, proxy }
       );
 
       // Try multiple response shapes (Netease changes this periodically)

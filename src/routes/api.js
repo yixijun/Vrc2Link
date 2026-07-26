@@ -20,6 +20,7 @@ export async function handleApi(request) {
   const platformOverride = url.searchParams.get('platform');
   const cookie = extractCookie(request);
   const forwardIp = request.headers.get('CF-Connecting-IP') || '';
+  const proxy = url.searchParams.get('proxy') || '';
 
   // Validate input
   if (!rawUrl) {
@@ -53,17 +54,19 @@ export async function handleApi(request) {
   try {
     let result;
 
+    const parseOpts = { cookie, forwardIp, proxy };
+
     if (platform === 'bilibili') {
       if (extracted.type === 'live') {
-        result = await parseLive(extracted.id, { cookie, forwardIp });
+        result = await parseLive(extracted.id, parseOpts);
       } else {
-        result = await parseVideo(extracted.id, { cookie, forwardIp });
+        result = await parseVideo(extracted.id, parseOpts);
       }
     } else if (platform === 'netease') {
       if (extracted.type === 'mv') {
-        result = await parseMv(extracted.id, { cookie, forwardIp });
+        result = await parseMv(extracted.id, parseOpts);
       } else {
-        result = await parseSong(extracted.id, { cookie, forwardIp });
+        result = await parseSong(extracted.id, parseOpts);
       }
     }
 

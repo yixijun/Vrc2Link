@@ -87,13 +87,13 @@ function setApiHeaders(headers, platform, existingCookie) {
 }
 
 /**
- * Fetch with retry.
+ * Fetch with retry. Supports optional proxy for blocked platforms.
  * @param {string} url
- * @param {RequestInit & { platform?: string, mode?: 'page'|'api', forwardIp?: string }} options
+ * @param {RequestInit & { platform?: string, mode?: 'page'|'api', forwardIp?: string, proxy?: string }} options
  * @returns {Promise<Response>}
  */
 export async function fetchWithRetry(url, options = {}) {
-  const { platform, mode = 'api', forwardIp, ...fetchOptions } = options;
+  const { platform, mode = 'api', forwardIp, proxy, ...fetchOptions } = options;
   const maxRetries = MAX_RETRIES;
 
   const headers = new Headers(fetchOptions.headers || {});
@@ -107,6 +107,9 @@ export async function fetchWithRetry(url, options = {}) {
     setApiHeaders(headers, platform, existingCookie);
   }
 
+  // Route through proxy if configured (for IP-blocked platforms like B站)
+  const targetUrl = proxy ? `${proxy}${encodeURIComponent(url)}` : url;
+
   let lastError;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -114,9 +117,9 @@ export async function fetchWithRetry(url, options = {}) {
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
     try {
-      const resp = await fetch(url, {
+      const resp = await fetch(targetUrl, {
         ...fetchOptions,
-        headers,
+        headers: proxy ? new Headers() : headers, // use clean headers when proxying
         signal: controller.signal,
         redirect: 'follow',
       });

@@ -6,6 +6,11 @@ compatibility_date = "2025-07-01"
 [build]
 command = ""
 
+[vars]
+# Optional: proxy URL for B站 (Cloudflare Worker IPs are blocked by B站)
+# Format: https://your-proxy.com/
+# PROXY = ""
+
 [observability]
 enabled = true
 head_sampling_rate = 1

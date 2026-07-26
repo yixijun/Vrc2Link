@@ -48,7 +48,7 @@ let cachedMixKey = null;
 let cachedMixKeyTime = 0;
 const MIX_KEY_TTL = 3600_000; // 1 hour
 
-async function getMixKey(forwardIp, cookie) {
+async function getMixKey(forwardIp, cookie, proxy) {
   if (cachedMixKey && Date.now() - cachedMixKeyTime < MIX_KEY_TTL) {
     return cachedMixKey;
   }
@@ -57,6 +57,7 @@ async function getMixKey(forwardIp, cookie) {
     platform: 'bilibili',
     mode: 'api',
     forwardIp,
+    proxy,
     headers: cookie ? { Cookie: cookie } : {},
   });
 
@@ -99,8 +100,8 @@ function signParams(params, mixKey) {
   return { wts, w_rid };
 }
 
-async function buildSignedUrl(baseUrl, params, forwardIp, cookie) {
-  const mixKey = await getMixKey(forwardIp, cookie);
+async function buildSignedUrl(baseUrl, params, forwardIp, cookie, proxy) {
+  const mixKey = await getMixKey(forwardIp, cookie, proxy);
   const { wts, w_rid } = signParams({ ...params }, mixKey);
   params.wts = wts;
   params.w_rid = w_rid;
@@ -118,7 +119,7 @@ async function buildSignedUrl(baseUrl, params, forwardIp, cookie) {
 /**
  * Scrape the video page to extract __INITIAL_STATE__ JSON.
  */
-async function scrapeVideoPage(bvid, forwardIp, cookie) {
+async function scrapeVideoPage(bvid, forwardIp, cookie, proxy) {
   const headers = {};
   if (cookie) headers.Cookie = cookie;
 
@@ -126,6 +127,7 @@ async function scrapeVideoPage(bvid, forwardIp, cookie) {
     platform: 'bilibili',
     mode: 'page',
     forwardIp,
+    proxy,
     headers,
   });
 
@@ -154,10 +156,10 @@ async function scrapeVideoPage(bvid, forwardIp, cookie) {
 // ---- Video parsing ----
 
 export async function parseVideo(bvid, options = {}) {
-  const { cookie = '', forwardIp } = options;
+  const { cookie = '', forwardIp, proxy } = options;
 
   // Step 1: Scrape the video page for metadata
-  const { state } = await scrapeVideoPage(bvid, forwardIp, cookie);
+  const { state } = await scrapeVideoPage(bvid, forwardIp, cookie, proxy);
 
   const vdata = state.videoData;
   if (!vdata) {
@@ -185,13 +187,15 @@ export async function parseVideo(bvid, options = {}) {
       platform: 'web',
     },
     forwardIp,
-    cookie
+    cookie,
+    proxy
   );
 
   const playResp = await fetchWithRetry(signedUrl, {
     platform: 'bilibili',
     mode: 'api',
     forwardIp,
+    proxy,
     headers: cookie ? { Cookie: cookie } : {},
   });
 
@@ -309,15 +313,16 @@ function buildVideoResult(bvid, title, cover, author, duration, pages, aid, play
 // ---- Live parsing ----
 
 export async function parseLive(roomId, options = {}) {
-  const { cookie = '', forwardIp } = options;
+  const { cookie = '', forwardIp, proxy } = options;
 
-  // Try the live API — this one is often reachable from Cloudflare IPs
+  // Try the live API
   const initResp = await fetchWithRetry(
     `https://api.live.bilibili.com/room/v1/Room/room_init?id=${roomId}`,
     {
       platform: 'bilibili',
       mode: 'api',
       forwardIp,
+      proxy,
       headers: cookie ? { Cookie: cookie } : {},
     }
   );
@@ -342,6 +347,7 @@ export async function parseLive(roomId, options = {}) {
       platform: 'bilibili',
       mode: 'api',
       forwardIp,
+      proxy,
       headers: cookie ? { Cookie: cookie } : {},
     }
   );
