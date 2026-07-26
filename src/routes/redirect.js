@@ -11,7 +11,12 @@ import { pickBestQuality, pickBestAudioQuality } from '../utils/quality.js';
 
 export async function handleRedirect(request) {
   const url = new URL(request.url);
-  const rawUrl = url.searchParams.get('url');
+  // Support both /r/<encoded_url>?params and /r?url=<encoded>&params
+  let rawUrl = url.searchParams.get('url');
+  if (!rawUrl) {
+    const pathUrl = url.pathname.replace(/^\/r\/?/, '');
+    if (pathUrl) rawUrl = decodeURIComponent(pathUrl);
+  }
   const targetQuality = url.searchParams.get('quality');
   const platformOverride = url.searchParams.get('platform');
   const cookie = extractCookie(request);

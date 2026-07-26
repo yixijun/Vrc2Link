@@ -9,7 +9,12 @@ import { parseSong, parseMv } from '../platforms/netease.js';
 
 export async function handleApi(request) {
   const url = new URL(request.url);
-  const rawUrl = url.searchParams.get('url');
+  // Support both /a/<encoded_url>?params and /a?url=<encoded>&params
+  let rawUrl = url.searchParams.get('url');
+  if (!rawUrl) {
+    const pathUrl = url.pathname.replace(/^\/a\/?/, '');
+    if (pathUrl) rawUrl = decodeURIComponent(pathUrl);
+  }
   const platformOverride = url.searchParams.get('platform');
   const cookie = extractCookie(request);
 

@@ -25,9 +25,9 @@ export async function handleRequest(request) {
 
   let response;
   try {
-    if (path === '/a') {
+    if (path.startsWith('/a/') || path === '/a') {
       response = await handleApi(request);
-    } else if (path === '/r') {
+    } else if (path.startsWith('/r/') || path === '/r') {
       response = await handleRedirect(request);
     } else {
       response = homePage();
