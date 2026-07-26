@@ -126,7 +126,7 @@ export async function parseMv(mvId, options = {}) {
   const cover = mvData.cover || '';
   const duration = Math.floor((mvData.duration || 0) / 1000);
 
-  // Step 2: Get MV play URLs at multiple resolutions
+  // Step 2: Get MV play URLs — try multiple request shapes
   const resolutions = [1080, 720, 480, 240];
   const streams = [];
 
@@ -137,13 +137,20 @@ export async function parseMv(mvId, options = {}) {
         { cookie, forwardIp }
       );
 
-      const url = urlData?.data?.url;
-      if (url) {
+      // Try multiple response shapes (Netease changes this periodically)
+      const streamUrl =
+        urlData?.data?.url ||
+        urlData?.data?.data?.url ||
+        urlData?.url ||
+        (urlData?.data?.urls && urlData.data.urls[0]?.url) ||
+        null;
+
+      if (streamUrl) {
         streams.push({
           quality: neteaseMvQuality(r),
           format: 'mp4',
           codec: 'avc',
-          url,
+          url: streamUrl,
           duration,
         });
       }
@@ -153,7 +160,7 @@ export async function parseMv(mvId, options = {}) {
   }
 
   if (streams.length === 0) {
-    throw new Error(`No playable MV URL found for: ${mvId}`);
+    throw new Error(`No playable MV URL found for: ${mvId}. Try passing a Netease cookie (MUSIC_U).`);
   }
 
   return {
