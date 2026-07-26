@@ -9,6 +9,7 @@
 
 import { handleApi } from './routes/api.js';
 import { handleRedirect } from './routes/redirect.js';
+import { handleResolve } from './routes/resolve.js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -34,6 +35,8 @@ export default {
         response = await handleApi(request);
       } else if (path === '/r') {
         response = await handleRedirect(request);
+      } else if (path === '/resolve') {
+        response = handleResolve(request);
       } else if (path === '/' || path === '') {
         response = handleHome();
       } else {
@@ -79,6 +82,13 @@ function handleHome() {
 <body>
   <h1>Vrc2Link</h1>
   <p>解析 Bilibili / 网易云音乐 链接为直链，适配 VRChat 播放器。</p>
+
+  <div class="endpoint">
+    <h3>B站解析 — 浏览器本地模式（推荐）</h3>
+    <pre>GET /resolve?url=&lt;bilibili_url&gt;&amp;cookie=&lt;optional&gt;</pre>
+    <p>Cloudflare Worker IP 被 B站封锁，已改为浏览器本地解析。打开页面后 JS 直接在浏览器调用 B站 API，避开 IP 封锁。</p>
+    <p><a href="/resolve">→ 打开 B站解析器</a></p>
+  </div>
 
   <div class="endpoint">
     <h3>API 模式 — JSON 返回</h3>
