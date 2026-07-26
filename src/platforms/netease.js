@@ -5,159 +5,94 @@
 import { fetchWithRetry } from '../utils/http.js';
 import { neteaseQuality, neteaseMvQuality } from '../utils/quality.js';
 
-/**
- * Helper: fetch JSON from an API endpoint.
- */
-async function fetchApiJson(url, options = {}) {
-  const { cookie, forwardIp, proxy } = options;
-  const headers = {};
-  if (cookie) headers.Cookie = cookie;
-
+async function fetchJson(url, options = {}) {
   const resp = await fetchWithRetry(url, {
-    platform: 'netease',
-    mode: 'api',
-    forwardIp,
-    proxy,
-    headers,
+    platform: 'netease', cookie: options.cookie,
   });
-
-  if (!resp.ok) {
-    throw new Error(`HTTP ${resp.status} from ${url}`);
-  }
-
+  if (!resp.ok) throw new Error(`HTTP ${resp.status} from ${url}`);
   return resp.json();
 }
 
-// ---- Song parsing ----
+// ---- Song ----
 
 export async function parseSong(songId, options = {}) {
-  const { cookie = '', forwardIp, proxy } = options;
+  const { cookie = '' } = options;
 
-  // Step 1: Get song detail
-  const detailData = await fetchApiJson(
-    `https://music.163.com/api/song/detail?ids=[${songId}]`,
-    { cookie, forwardIp, proxy }
-  );
-
-  const song = detailData?.songs?.[0];
-  if (!song) {
-    throw new Error(`Song not found: ${songId}`);
-  }
+  const detail = await fetchJson(`https://music.163.com/api/song/detail?ids=[${songId}]`, { cookie });
+  const song = detail?.songs?.[0];
+  if (!song) throw new Error(`Song not found: ${songId}`);
 
   const title = song.name || '';
-  const author = (song.artists || []).map((a) => a.name).join(' / ') || '';
+  const author = (song.artists || []).map(a => a.name).join(' / ') || '';
   const cover = song.album?.picUrl || song.album?.blurPicUrl || '';
   const album = song.album?.name || '';
   const duration = Math.floor((song.duration || 0) / 1000);
 
-  // Step 2: Get play URL — try official API with descending bitrates
-  let streamUrl = null;
-  let streamQuality = '';
-  const bitrates = [999000, 320000, 256000, 128000];
-
-  for (const br of bitrates) {
+  // Try bitrates descending
+  let url = null, quality = '';
+  for (const br of [999000, 320000, 256000, 128000]) {
     try {
-      const playerData = await fetchApiJson(
+      const pd = await fetchJson(
         `https://music.163.com/api/song/enhance/player/url?id=${songId}&ids=[${songId}]&br=${br}`,
-        { cookie, forwardIp, proxy }
+        { cookie }
       );
-
-      const url = playerData?.data?.[0]?.url;
-      if (url) {
-        streamUrl = url;
-        streamQuality = neteaseQuality(br);
-        break;
-      }
-    } catch {
-      continue;
-    }
+      url = pd?.data?.[0]?.url;
+      if (url) { quality = neteaseQuality(br); break; }
+    } catch { continue; }
   }
 
-  // Step 3: Fallback to public mirror
-  if (!streamUrl) {
-    streamUrl = `https://music.163.com/song/media/outer/url?id=${songId}.mp3`;
-    streamQuality = '128k';
-  }
-
-  const streams = [];
-  if (streamUrl) {
-    streams.push({
-      quality: streamQuality,
-      format: streamUrl.includes('.flac') ? 'flac' : 'mp3',
-      codec: streamUrl.includes('.flac') ? 'flac' : 'mp3',
-      url: streamUrl,
-      duration,
-    });
-  }
+  // Fallback to public mirror
+  if (!url) { url = `https://music.163.com/song/media/outer/url?id=${songId}.mp3`; quality = '128k'; }
 
   return {
-    platform: 'netease',
-    type: 'song',
+    platform: 'netease', type: 'song',
     meta: {
-      id: songId,
-      title,
-      cover,
-      author,
-      album,
-      duration,
-      hasHighQuality: streamQuality === '320k' || streamQuality === 'lossless',
+      id: songId, title, cover, author, album, duration,
+      hasHighQuality: quality === '320k' || quality === 'lossless',
     },
-    streams,
+    streams: [{
+      quality, duration,
+      format: url.includes('.flac') ? 'flac' : 'mp3',
+      codec: url.includes('.flac') ? 'flac' : 'mp3',
+      url,
+    }],
   };
 }
 
-// ---- MV parsing ----
+// ---- MV ----
 
 export async function parseMv(mvId, options = {}) {
-  const { cookie = '', forwardIp, proxy } = options;
+  const { cookie = '' } = options;
 
-  // Step 1: Get MV detail
-  const detailData = await fetchApiJson(
-    `https://music.163.com/api/mv/detail?id=${mvId}`,
-    { cookie, forwardIp, proxy }
-  );
+  const detail = await fetchJson(`https://music.163.com/api/mv/detail?id=${mvId}`, { cookie });
+  const mv = detail?.data;
+  if (!mv) throw new Error(`MV not found: ${mvId}`);
 
-  const mvData = detailData?.data;
-  if (!mvData) {
-    throw new Error(`MV not found: ${mvId}`);
-  }
+  const title = mv.name || '';
+  const author = mv.artistName || mv.artist?.name || '';
+  const cover = mv.cover || '';
+  const duration = Math.floor((mv.duration || 0) / 1000);
 
-  const title = mvData.name || '';
-  const author = mvData.artistName || mvData.artist?.name || '';
-  const cover = mvData.cover || '';
-  const duration = Math.floor((mvData.duration || 0) / 1000);
-
-  // Step 2: Get MV play URLs — try multiple request shapes
-  const resolutions = [1080, 720, 480, 240];
+  // Try resolutions, also check detail.brs for embedded URLs
   const streams = [];
 
-  for (const r of resolutions) {
-    try {
-      const urlData = await fetchApiJson(
-        `https://music.163.com/api/mv/url?id=${mvId}&r=${r}`,
-        { cookie, forwardIp, proxy }
-      );
-
-      // Try multiple response shapes (Netease changes this periodically)
-      const streamUrl =
-        urlData?.data?.url ||
-        urlData?.data?.data?.url ||
-        urlData?.url ||
-        (urlData?.data?.urls && urlData.data.urls[0]?.url) ||
-        null;
-
-      if (streamUrl) {
-        streams.push({
-          quality: neteaseMvQuality(r),
-          format: 'mp4',
-          codec: 'avc',
-          url: streamUrl,
-          duration,
-        });
-      }
-    } catch {
-      continue;
+  // First check if detail response has brs with direct URLs
+  if (mv.brs) {
+    for (const [res, url] of Object.entries(mv.brs)) {
+      if (url) streams.push({ quality: neteaseMvQuality(parseInt(res)), format: 'mp4', codec: 'avc', url, duration });
     }
+  }
+
+  // Also try MV URL API for each resolution
+  for (const r of [1080, 720, 480, 240]) {
+    try {
+      const urlData = await fetchJson(`https://music.163.com/api/mv/url?id=${mvId}&r=${r}`, { cookie });
+      const u = urlData?.data?.url || urlData?.data?.data?.url ||
+                (urlData?.data?.urls && urlData.data.urls[0]?.url);
+      if (u && !streams.find(s => s.url === u)) {
+        streams.push({ quality: neteaseMvQuality(r), format: 'mp4', codec: 'avc', url: u, duration });
+      }
+    } catch { continue; }
   }
 
   if (streams.length === 0) {
@@ -165,15 +100,8 @@ export async function parseMv(mvId, options = {}) {
   }
 
   return {
-    platform: 'netease',
-    type: 'mv',
-    meta: {
-      id: mvId,
-      title,
-      cover,
-      author,
-      duration,
-    },
+    platform: 'netease', type: 'mv',
+    meta: { id: mvId, title, cover, author, duration },
     streams,
   };
 }

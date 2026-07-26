@@ -1,13 +1,10 @@
 {
   "name": "vrc2link",
-  "version": "1.0.0",
-  "description": "VRChat media link resolver — Bilibili & Netease to direct stream URLs",
+  "version": "2.0.0",
+  "description": "Bilibili & Netease stream resolver for VRChat — deploy on domestic server",
   "type": "module",
   "scripts": {
-    "deploy": "wrangler deploy",
-    "dev": "wrangler dev"
-  },
-  "devDependencies": {
-    "wrangler": "^3.0.0"
+    "start": "node server.js",
+    "dev": "node --watch server.js"
   }
 }

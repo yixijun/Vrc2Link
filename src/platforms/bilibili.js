@@ -1,390 +1,157 @@
 /**
- * Bilibili platform parser — video (BV) + live (room_id).
- *
- * Strategy: scrape the video page HTML (window.__INITIAL_STATE__) instead of
- * calling api.bilibili.com directly, because Cloudflare Worker IPs are often
- * blocked by B站's API gateway (412). The public web page is served via CDN
- * and works from any IP.
+ * Bilibili platform parser — video + live.
+ * Deployed on domestic server → direct API calls, no IP block.
  */
 
 import { md5 } from '../utils/md5.js';
 import { fetchWithRetry } from '../utils/http.js';
-import { bilibiliQuality, pickBestQuality, bilibiliQnForQuality } from '../utils/quality.js';
-
-// ---- Helpers ----
-
-/**
- * Extract a JSON object from HTML by bracket counting.
- * More robust than regex for nested JSON.
- */
-function extractJson(html, marker) {
-  const start = html.indexOf(marker);
-  if (start === -1) return null;
-  const jsonStart = html.indexOf('{', start);
-  if (jsonStart === -1) return null;
-  let depth = 0;
-  for (let i = jsonStart; i < html.length; i++) {
-    if (html[i] === '{') depth++;
-    else if (html[i] === '}') {
-      depth--;
-      if (depth === 0) return html.substring(jsonStart, i + 1);
-    }
-  }
-  return null;
-}
-
-/**
- * Extract deadline timestamp from a Bilibili CDN URL.
- */
-function extractDeadline(url) {
-  if (!url) return null;
-  const match = url.match(/deadline=(\d+)/);
-  return match ? parseInt(match[1], 10) : null;
-}
+import { bilibiliQuality, pickBestQuality } from '../utils/quality.js';
 
 // ---- WBI signing ----
 
-let cachedMixKey = null;
-let cachedMixKeyTime = 0;
-const MIX_KEY_TTL = 3600_000; // 1 hour
+let mixKey = null;
+let mixKeyTime = 0;
 
-async function getMixKey(forwardIp, cookie, proxy) {
-  if (cachedMixKey && Date.now() - cachedMixKeyTime < MIX_KEY_TTL) {
-    return cachedMixKey;
-  }
+async function getMixKey(cookie) {
+  if (mixKey && Date.now() - mixKeyTime < 3600_000) return mixKey;
 
   const resp = await fetchWithRetry('https://api.bilibili.com/x/web-interface/nav', {
-    platform: 'bilibili',
-    mode: 'api',
-    forwardIp,
-    proxy,
-    headers: cookie ? { Cookie: cookie } : {},
+    platform: 'bilibili', cookie,
   });
-
-  if (!resp.ok) {
-    // If nav API is blocked, use a hardcoded fallback key (rotates periodically)
-    // Most open-source parsers cache the key for 1h to reduce API calls
-    throw new Error(`Failed to fetch WBI keys: HTTP ${resp.status}`);
-  }
-
   const data = await resp.json();
   const wbi = data?.data?.wbi_img;
-  if (!wbi?.img_url || !wbi?.sub_url) {
-    throw new Error('WBI keys not found in nav response');
-  }
+  if (!wbi?.img_url || !wbi?.sub_url) throw new Error('WBI keys not found');
 
-  const extractStem = (url) => {
-    const parts = url.split('/');
-    const filename = parts[parts.length - 1];
-    return filename.substring(0, filename.lastIndexOf('.'));
-  };
-
-  cachedMixKey = extractStem(wbi.img_url) + extractStem(wbi.sub_url);
-  cachedMixKeyTime = Date.now();
-  return cachedMixKey;
+  const stem = (u) => { const f = u.split('/').pop(); return f.substring(0, f.lastIndexOf('.')); };
+  mixKey = stem(wbi.img_url) + stem(wbi.sub_url);
+  mixKeyTime = Date.now();
+  return mixKey;
 }
 
-function signParams(params, mixKey) {
-  delete params.w_rid;
-  delete params.wts;
-
+function signParams(params, key) {
+  delete params.w_rid; delete params.wts;
   const sorted = Object.keys(params)
-    .filter((k) => params[k] !== undefined && params[k] !== null)
-    .sort()
-    .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`)
-    .join('&');
-
-  const wts = Math.floor(Date.now() / 1000);
-  const w_rid = md5(sorted + mixKey);
-
-  return { wts, w_rid };
+    .filter(k => params[k] != null).sort()
+    .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join('&');
+  return { wts: Math.floor(Date.now() / 1000), w_rid: md5(sorted + key) };
 }
 
-async function buildSignedUrl(baseUrl, params, forwardIp, cookie, proxy) {
-  const mixKey = await getMixKey(forwardIp, cookie, proxy);
-  const { wts, w_rid } = signParams({ ...params }, mixKey);
-  params.wts = wts;
-  params.w_rid = w_rid;
-
-  const query = Object.entries(params)
-    .filter(([, v]) => v !== undefined && v !== null)
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-    .join('&');
-
-  return `${baseUrl}?${query}`;
+async function signedUrl(base, params, cookie) {
+  const key = await getMixKey(cookie);
+  Object.assign(params, signParams({ ...params }, key));
+  const q = Object.entries(params)
+    .filter(([, v]) => v != null)
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+  return `${base}?${q}`;
 }
 
-// ---- Video page scraping ----
-
-/**
- * Scrape the video page to extract __INITIAL_STATE__ JSON.
- */
-async function scrapeVideoPage(bvid, forwardIp, cookie, proxy) {
-  const headers = {};
-  if (cookie) headers.Cookie = cookie;
-
-  const resp = await fetchWithRetry(`https://www.bilibili.com/video/${bvid}`, {
-    platform: 'bilibili',
-    mode: 'page',
-    forwardIp,
-    proxy,
-    headers,
-  });
-
-  if (!resp.ok) {
-    throw new Error(`Failed to fetch video page: HTTP ${resp.status}`);
-  }
-
-  const html = await resp.text();
-
-  // Extract the embedded state JSON
-  const jsonStr = extractJson(html, 'window.__INITIAL_STATE__');
-  if (!jsonStr) {
-    throw new Error('Could not find __INITIAL_STATE__ in page (video may not exist)');
-  }
-
-  let state;
-  try {
-    state = JSON.parse(jsonStr);
-  } catch {
-    throw new Error('Failed to parse __INITIAL_STATE__ JSON');
-  }
-
-  return { state, html };
-}
-
-// ---- Video parsing ----
+// ---- Parse video ----
 
 export async function parseVideo(bvid, options = {}) {
-  const { cookie = '', forwardIp, proxy } = options;
+  const { cookie = '' } = options;
 
-  // Step 1: Scrape the video page for metadata
-  const { state } = await scrapeVideoPage(bvid, forwardIp, cookie, proxy);
-
-  const vdata = state.videoData;
-  if (!vdata) {
-    throw new Error(`Video not found: ${bvid}`);
-  }
-
-  const cid = vdata.cid;
-  const title = vdata.title || '';
-  const cover = vdata.pic || '';
-  const author = vdata.owner?.name || '';
-  const duration = vdata.duration || 0;
-  const pages = vdata.pages || [];
-  const aid = vdata.aid || state.aid;
-
-  // Step 2: Get play URLs via API (with WBI signing)
-  const signedUrl = await buildSignedUrl(
-    'https://api.bilibili.com/x/player/wbi/playurl',
-    {
-      bvid,
-      cid: String(cid),
-      qn: String(bilibiliQnForQuality('2k')),
-      fnval: '1',
-      fnver: '0',
-      fourk: '1',
-      platform: 'web',
-    },
-    forwardIp,
-    cookie,
-    proxy
+  // Step 1: get video info
+  const viewResp = await fetchWithRetry(
+    `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`,
+    { platform: 'bilibili', cookie }
   );
+  const vdata = (await viewResp.json())?.data;
+  if (!vdata) throw new Error(`Video not found: ${bvid}`);
 
-  const playResp = await fetchWithRetry(signedUrl, {
-    platform: 'bilibili',
-    mode: 'api',
-    forwardIp,
-    proxy,
-    headers: cookie ? { Cookie: cookie } : {},
-  });
+  const { cid, title = '', pic: cover = '', duration = 0, pages = [] } = vdata;
+  const author = vdata.owner?.name || '';
 
-  if (!playResp.ok) {
-    // If playurl API is also blocked, fall back to page-embedded playinfo
-    return fallbackFromPage(state, bvid, title, cover, author, duration, pages, aid);
-  }
+  // Step 2: get play URLs (combined stream, fnval=1)
+  const playUrl = await signedUrl('https://api.bilibili.com/x/player/wbi/playurl', {
+    bvid, cid: String(cid), qn: '120', fnval: '1', fnver: '0', fourk: '1', platform: 'web',
+  }, cookie);
 
-  const playData = await playResp.json();
-  const playResult = playData?.data || playData?.result;
+  const playResp = await fetchWithRetry(playUrl, { platform: 'bilibili', cookie });
+  const playResult = (await playResp.json())?.data;
+  if (!playResult) throw new Error('Failed to get play URL');
 
-  if (!playResult || (!playResult.durl && !playResult.dash)) {
-    return fallbackFromPage(state, bvid, title, cover, author, duration, pages, aid);
-  }
-
-  return buildVideoResult(bvid, title, cover, author, duration, pages, aid, playResult);
-}
-
-/**
- * Fallback: try to extract play URLs from the page's embedded data.
- * B站 sometimes embeds playurl info directly in __INITIAL_STATE__.
- */
-async function fallbackFromPage(state, bvid, title, cover, author, duration, pages, aid) {
-  // Check if play info is embedded in the page state
-  const playInfo = state.videoData?.dash || state.playinfo || state.videoData?.durl;
-
-  if (playInfo) {
-    return buildVideoResult(bvid, title, cover, author, duration, pages, aid, {
-      durl: state.videoData?.durl,
-      dash: state.videoData?.dash,
-      quality: state.videoData?.quality || 80,
-      accept_quality: state.videoData?.accept_quality || [80, 64, 32, 16],
-      accept_description: state.videoData?.accept_description || ['1080P', '720P', '480P', '360P'],
-    });
-  }
-
-  throw new Error('Play URL API blocked and no embedded playinfo found. Try passing a valid cookie.');
-}
-
-function buildVideoResult(bvid, title, cover, author, duration, pages, aid, playResult) {
+  // Build streams
   const streams = [];
-  const acceptQuality = playResult.accept_quality || [];
-  const acceptDesc = playResult.accept_description || [];
+  const currentQn = playResult.quality || 0;
+  const quality = bilibiliQuality(currentQn);
 
-  if (playResult.durl && playResult.durl.length > 0) {
-    const currentQn = playResult.quality || 0;
-    const quality = bilibiliQuality(currentQn);
-
+  if (playResult.durl?.length) {
     for (const d of playResult.durl) {
       streams.push({
-        quality,
+        quality, duration,
         format: d.url.includes('.m3u8') ? 'm3u8' : d.url.includes('.flv') ? 'flv' : 'mp4',
         codec: 'avc',
         url: d.url,
         size: d.size || 0,
-        duration,
-        expiresAt: extractDeadline(d.url),
+        expiresAt: (d.url.match(/deadline=(\d+)/) || [])[1] || null,
       });
     }
   }
 
   if (playResult.dash && streams.length === 0) {
-    const dash = playResult.dash;
-    const videoStreams = (dash.video || []).map((v) => ({
-      quality: bilibiliQuality(v.id),
-      format: 'mp4',
-      codec: v.codecs || 'avc',
-      url: v.baseUrl || v.base_url,
-      type: 'video-only',
-      bandwidth: v.bandwidth || 0,
-    }));
-    const audioStreams = (dash.audio || []).map((a) => ({
-      quality: `${Math.round((a.bandwidth || 0) / 1000)}k`,
-      format: 'mp4',
-      codec: a.codecs || 'aac',
-      url: a.baseUrl || a.base_url,
-      type: 'audio-only',
-      bandwidth: a.bandwidth || 0,
-    }));
-    streams.push(
-      ...videoStreams.filter((s) => pickBestQuality([s.quality]) === s.quality),
-      ...audioStreams
-    );
+    for (const v of playResult.dash.video || []) {
+      streams.push({
+        quality: bilibiliQuality(v.id), format: 'mp4', codec: v.codecs || 'avc',
+        url: v.baseUrl || v.base_url, type: 'video-only', bandwidth: v.bandwidth || 0,
+      });
+    }
+    for (const a of playResult.dash.audio || []) {
+      streams.push({
+        quality: `${Math.round((a.bandwidth || 0) / 1000)}k`, format: 'mp4', codec: a.codecs || 'aac',
+        url: a.baseUrl || a.base_url, type: 'audio-only', bandwidth: a.bandwidth || 0,
+      });
+    }
   }
 
-  const pageList = pages.map((p) => ({
-    cid: p.cid,
-    title: p.part || '',
-    duration: p.duration || 0,
-  }));
-
-  const qualityOptions = acceptQuality.map((qn, i) => ({
-    raw: qn,
-    label: bilibiliQuality(qn),
-    description: acceptDesc[i] || bilibiliQuality(qn),
-  }));
-
   return {
-    platform: 'bilibili',
-    type: 'video',
+    platform: 'bilibili', type: 'video',
     meta: {
-      id: bvid,
-      title,
-      cover,
-      author,
-      duration,
-      cid: playResult.cid || pages[0]?.cid,
-      pages: pageList,
-      qualityOptions,
+      id: bvid, title, cover, author, duration, cid,
+      pages: pages.map(p => ({ cid: p.cid, title: p.part || '', duration: p.duration || 0 })),
+      qualityOptions: (playResult.accept_quality || []).map((qn, i) => ({
+        raw: qn, label: bilibiliQuality(qn), description: (playResult.accept_description || [])[i] || bilibiliQuality(qn),
+      })),
     },
     streams,
   };
 }
 
-// ---- Live parsing ----
+// ---- Parse live ----
 
 export async function parseLive(roomId, options = {}) {
-  const { cookie = '', forwardIp, proxy } = options;
+  const { cookie = '' } = options;
 
-  // Try the live API
+  // Step 1: real room ID
   const initResp = await fetchWithRetry(
     `https://api.live.bilibili.com/room/v1/Room/room_init?id=${roomId}`,
-    {
-      platform: 'bilibili',
-      mode: 'api',
-      forwardIp,
-      proxy,
-      headers: cookie ? { Cookie: cookie } : {},
-    }
+    { platform: 'bilibili', cookie }
   );
+  const initData = (await initResp.json())?.data;
+  if (!initData?.room_id) throw new Error(`Live room not found: ${roomId}`);
 
-  if (!initResp.ok) {
-    throw new Error(`Live API blocked: HTTP ${initResp.status}`);
-  }
+  const realId = initData.room_id;
 
-  const initData = await initResp.json();
-  const realRoomId = initData?.data?.room_id;
-  if (!realRoomId) {
-    throw new Error(`Live room not found: ${roomId}`);
-  }
-
-  const liveStatus = initData?.data?.live_status;
-  const title = initData?.data?.title || `Room ${realRoomId}`;
-
-  // Get play info
+  // Step 2: play info
   const playResp = await fetchWithRetry(
-    `https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo?room_id=${realRoomId}&protocol=0,1&format=0,1,2&codec=0&platform=web`,
-    {
-      platform: 'bilibili',
-      mode: 'api',
-      forwardIp,
-      proxy,
-      headers: cookie ? { Cookie: cookie } : {},
-    }
+    `https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo?room_id=${realId}&protocol=0,1&format=0,1,2&codec=0&platform=web`,
+    { platform: 'bilibili', cookie }
   );
-
-  if (!playResp.ok) {
-    throw new Error(`Live play API blocked: HTTP ${playResp.status}`);
-  }
-
-  const playData = await playResp.json();
-  const playurlInfo = playData?.data?.playurl_info?.playurl;
-  if (!playurlInfo) {
-    throw new Error('Failed to get live play URL');
-  }
+  const playurl = (await playResp.json())?.data?.playurl_info?.playurl;
+  if (!playurl) throw new Error('Failed to get live play URL');
 
   const streams = [];
-  for (const stream of playurlInfo.stream || []) {
-    const protocolName = stream.protocol_name;
+  for (const stream of playurl.stream || []) {
     for (const fmt of stream.format || []) {
-      const formatName = fmt.format_name;
       for (const codec of fmt.codec || []) {
-        const codecName = codec.codec_name;
-        const baseUrl = codec.base_url || '';
         for (const info of codec.url_info || []) {
-          const fullUrl = `${info.host}${baseUrl}${info.extra || ''}`;
-
-          let format;
-          if (protocolName === 'http_hls') format = 'm3u8';
-          else if (formatName === 'flv') format = 'flv';
-          else format = formatName;
-
+          const url = `${info.host}${codec.base_url || ''}${info.extra || ''}`;
+          let format = fmt.format_name;
+          if (stream.protocol_name === 'http_hls') format = 'm3u8';
           streams.push({
-            quality: codecName === 'hevc' ? '1080p' : 'original',
-            format,
-            codec: codecName,
-            url: fullUrl,
+            quality: codec.codec_name === 'hevc' ? '1080p' : 'original',
+            format, codec: codec.codec_name, url,
             bitrate: stream.stream_info?.bitrate || 0,
-            protocol: protocolName,
+            protocol: stream.protocol_name,
           });
         }
       }
@@ -392,13 +159,12 @@ export async function parseLive(roomId, options = {}) {
   }
 
   return {
-    platform: 'bilibili',
-    type: 'live',
+    platform: 'bilibili', type: 'live',
     meta: {
-      id: String(realRoomId),
-      shortId: roomId !== String(realRoomId) ? roomId : null,
-      title,
-      liveStatus,
+      id: String(realId),
+      shortId: roomId !== String(realId) ? roomId : null,
+      title: initData.title || `Room ${realId}`,
+      liveStatus: initData.live_status,
     },
     streams,
   };

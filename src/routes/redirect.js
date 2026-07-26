@@ -1,8 +1,6 @@
 /**
- * GET /r?url=<encoded>&quality=<optional>&cookie=<optional>&platform=<optional>
- *
- * 302 redirects to the best direct stream URL.
- * For VRChat players that just need a direct URL to paste in.
+ * GET /r?url=<encoded>&quality=<optional>&cookie=<optional>
+ * 302 redirect to best direct stream URL.
  */
 
 import { identifyPlatform, extractId, expandShortLink } from '../utils/url.js';
@@ -11,101 +9,60 @@ import { parseVideo, parseLive } from '../platforms/bilibili.js';
 import { parseSong, parseMv } from '../platforms/netease.js';
 import { pickBestQuality, pickBestAudioQuality } from '../utils/quality.js';
 
-/**
- * Handle the /r redirect route.
- * @param {Request} request
- * @returns {Promise<Response>}
- */
 export async function handleRedirect(request) {
   const url = new URL(request.url);
   const rawUrl = url.searchParams.get('url');
-  const targetQuality = url.searchParams.get('quality') || null;
+  const targetQuality = url.searchParams.get('quality');
   const platformOverride = url.searchParams.get('platform');
   const cookie = extractCookie(request);
-  const forwardIp = request.headers.get('CF-Connecting-IP') || '';
-  const proxy = url.searchParams.get('proxy') || '';
 
-  if (!rawUrl) {
-    return redirectError('Missing required parameter: url');
+  if (!rawUrl) return textError('Missing required parameter: url');
+
+  let target = rawUrl.trim();
+  console.log(`[redirect] url=${target} quality=${targetQuality || 'best'} cookie=${maskCookie(cookie)}`);
+
+  try { target = await expandShortLink(target); } catch (err) {
+    return textError(`Failed to resolve short link: ${err.message}`);
   }
 
-  let targetUrl = rawUrl.trim();
+  const platform = platformOverride || identifyPlatform(target);
+  if (!platform) return textError('Unsupported platform');
 
-  console.log(`[redirect] url=${targetUrl} quality=${targetQuality || 'best'} cookie=${maskCookie(cookie)}`);
+  const extracted = extractId(target, platform);
+  if (!extracted) return textError(`Could not parse URL: ${target}`);
 
-  // Expand short links
-  try {
-    targetUrl = await expandShortLink(targetUrl);
-  } catch (err) {
-    return redirectError(`Failed to resolve short link: ${err.message}`);
-  }
-
-  // Identify platform
-  const platform = platformOverride || identifyPlatform(targetUrl);
-  if (!platform) {
-    return redirectError('Unsupported platform');
-  }
-
-  // Extract ID
-  const extracted = extractId(targetUrl, platform);
-  if (!extracted) {
-    return redirectError(`Could not parse URL: ${targetUrl}`);
-  }
-
-  // Parse
   try {
     let result;
-
-    const parseOpts = { cookie, forwardIp, proxy };
-
     if (platform === 'bilibili') {
-      if (extracted.type === 'live') {
-        result = await parseLive(extracted.id, parseOpts);
-      } else {
-        result = await parseVideo(extracted.id, parseOpts);
-      }
-    } else if (platform === 'netease') {
-      if (extracted.type === 'mv') {
-        result = await parseMv(extracted.id, parseOpts);
-      } else {
-        result = await parseSong(extracted.id, parseOpts);
-      }
-    }
-
-    if (!result.streams || result.streams.length === 0) {
-      return redirectError('No playable streams found');
-    }
-
-    // Pick the right stream
-    let chosen;
-
-    if (result.type === 'live') {
-      // For live, prefer HLS (m3u8) for automatic refresh
-      const hls = result.streams.find((s) => s.format === 'm3u8');
-      chosen = hls || result.streams[0];
-    } else if (result.type === 'song') {
-      // For audio, pick best quality
-      const qualities = result.streams.map((s) => s.quality);
-      const best = pickBestAudioQuality(qualities);
-      chosen = result.streams.find((s) => s.quality === best) || result.streams[0];
+      result = extracted.type === 'live'
+        ? await parseLive(extracted.id, { cookie })
+        : await parseVideo(extracted.id, { cookie });
     } else {
-      // For video/MV, respect quality param or pick best up to 2k
-      if (targetQuality) {
-        chosen = result.streams.find((s) => s.quality === targetQuality);
-      }
+      result = extracted.type === 'mv'
+        ? await parseMv(extracted.id, { cookie })
+        : await parseSong(extracted.id, { cookie });
+    }
+
+    if (!result.streams?.length) return textError('No playable streams found');
+
+    // Pick best stream
+    let chosen;
+    if (result.type === 'live') {
+      chosen = result.streams.find(s => s.format === 'm3u8') || result.streams[0];
+    } else if (result.type === 'song') {
+      const best = pickBestAudioQuality(result.streams.map(s => s.quality));
+      chosen = result.streams.find(s => s.quality === best) || result.streams[0];
+    } else {
+      if (targetQuality) chosen = result.streams.find(s => s.quality === targetQuality);
       if (!chosen) {
-        const qualities = result.streams.map((s) => s.quality);
-        const best = pickBestQuality(qualities);
-        chosen = result.streams.find((s) => s.quality === best) || result.streams[0];
+        const best = pickBestQuality(result.streams.map(s => s.quality));
+        chosen = result.streams.find(s => s.quality === best) || result.streams[0];
       }
     }
 
-    if (!chosen || !chosen.url) {
-      return redirectError('No suitable stream found');
-    }
+    if (!chosen?.url) return textError('No suitable stream found');
 
-    console.log(`[redirect] → ${chosen.quality} ${chosen.format} ${chosen.url.substring(0, 80)}...`);
-
+    console.log(`[redirect] → ${chosen.quality} ${chosen.format}`);
     return new Response(null, {
       status: 302,
       headers: {
@@ -116,17 +73,12 @@ export async function handleRedirect(request) {
     });
   } catch (err) {
     console.error(`[redirect] error: ${err.message}`);
-    return redirectError(`Upstream error: ${err.message}`);
+    return textError(`Upstream error: ${err.message}`);
   }
 }
 
-/**
- * Return a plain-text error for the redirect endpoint.
- * (Not JSON — VRChat players can't read JSON from a redirect endpoint anyway.)
- */
-function redirectError(message) {
-  return new Response(`Error: ${message}\nTry /api/parse for JSON output with details.\n`, {
-    status: 502,
-    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+function textError(msg) {
+  return new Response(`Error: ${msg}\n`, {
+    status: 502, headers: { 'Content-Type': 'text/plain; charset=utf-8' },
   });
 }
