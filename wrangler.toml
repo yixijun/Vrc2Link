@@ -2,6 +2,10 @@ name = "vrc2link"
 main = "src/index.js"
 compatibility_date = "2025-07-01"
 
+# Wrangler v4: explicitly declare no static assets
+[build]
+command = ""
+
 [observability]
 enabled = true
 head_sampling_rate = 1
