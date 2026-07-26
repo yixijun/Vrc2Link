@@ -3,52 +3,13 @@
  * Deployed on domestic server → direct API calls, no IP block.
  */
 
-import { md5 } from '../utils/md5.js';
 import { fetchWithRetry } from '../utils/http.js';
-import { bilibiliQuality, pickBestQuality } from '../utils/quality.js';
-
-// ---- WBI signing ----
-
-let mixKey = null;
-let mixKeyTime = 0;
-
-async function getMixKey(cookie) {
-  if (mixKey && Date.now() - mixKeyTime < 3600_000) return mixKey;
-
-  const resp = await fetchWithRetry('https://api.bilibili.com/x/web-interface/nav', {
-    platform: 'bilibili', cookie,
-  });
-  const data = await resp.json();
-  const wbi = data?.data?.wbi_img;
-  if (!wbi?.img_url || !wbi?.sub_url) throw new Error('WBI keys not found');
-
-  const stem = (u) => { const f = u.split('/').pop(); return f.substring(0, f.lastIndexOf('.')); };
-  mixKey = stem(wbi.img_url) + stem(wbi.sub_url);
-  mixKeyTime = Date.now();
-  return mixKey;
-}
-
-function signParams(params, key) {
-  delete params.w_rid; delete params.wts;
-  const sorted = Object.keys(params)
-    .filter(k => params[k] != null).sort()
-    .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join('&');
-  return { wts: Math.floor(Date.now() / 1000), w_rid: md5(sorted + key) };
-}
-
-async function signedUrl(base, params, cookie) {
-  const key = await getMixKey(cookie);
-  Object.assign(params, signParams({ ...params }, key));
-  const q = Object.entries(params)
-    .filter(([, v]) => v != null)
-    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-  return `${base}?${q}`;
-}
+import { bilibiliQuality, bilibiliQnForQuality } from '../utils/quality.js';
 
 // ---- Parse video ----
 
 export async function parseVideo(bvid, options = {}) {
-  const { cookie = '' } = options;
+  const { cookie = '', quality: targetQuality } = options;
 
   // Step 1: get video info
   const viewResp = await fetchWithRetry(
@@ -61,14 +22,33 @@ export async function parseVideo(bvid, options = {}) {
   const { cid, title = '', pic: cover = '', duration = 0, pages = [] } = vdata;
   const author = vdata.owner?.name || '';
 
-  // Step 2: get play URLs (combined stream, fnval=1)
-  const playUrl = await signedUrl('https://api.bilibili.com/x/player/wbi/playurl', {
-    bvid, cid: String(cid), qn: '120', fnval: '1', fnver: '0', fourk: '1', platform: 'web',
-  }, cookie);
+  // PGC videos use a different player endpoint even when opened through a BV URL.
+  const isPgc = /\/bangumi\/play\//.test(vdata.redirect_url || '');
+  const playEndpoint = isPgc
+    ? 'https://api.bilibili.com/pgc/player/web/playurl/html5'
+    : 'https://api.bilibili.com/x/player/playurl';
+  const qn = targetQuality
+    ? bilibiliQnForQuality(targetQuality)
+    : bilibiliQnForQuality('8k');
+  const playUrl = `${playEndpoint}?${new URLSearchParams({
+    bvid,
+    cid: String(cid),
+    qn: String(qn),
+    fnval: '0',
+    fnver: '0',
+    fourk: '1',
+    platform: 'html5',
+    type: 'mp4',
+    high_quality: '1',
+  })}`;
 
   const playResp = await fetchWithRetry(playUrl, { platform: 'bilibili', cookie });
-  const playResult = (await playResp.json())?.data;
-  if (!playResult) throw new Error('Failed to get play URL');
+  const playPayload = await playResp.json();
+  const playResult = isPgc ? playPayload?.result : playPayload?.data;
+  if (playPayload?.code !== 0 || !playResult) {
+    const detail = playPayload?.message || playResult?.message || 'unknown upstream error';
+    throw new Error(`Failed to get play URL: ${detail} (${playPayload?.code ?? 'no code'})`);
+  }
 
   // Build streams
   const streams = [];

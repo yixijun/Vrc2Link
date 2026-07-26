@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import { extractId, identifyPlatform, normalizeSourceUrl } from '../src/utils/url.js';
+
+test('extractId recognises hash-based Netease MV links', () => {
+  const url = 'https://music.163.com/#/mv?id=5365570';
+
+  assert.equal(identifyPlatform(url), 'netease');
+  assert.deepEqual(extractId(url, 'netease'), { type: 'mv', id: '5365570' });
+});
+
+test('normalizeSourceUrl extracts a Bilibili URL from copied share text', () => {
+  const shareText = '【杜比视界·全景声|超时空辉夜姬特别混音版「星降る海」~NERX Remix~】 https://www.bilibili.com/video/BV1W4PXzJEDy/?share_source=copy_web&vd_source=ca506b4a36411ffbeb99dd4bb414f924,这种也要能识别';
+
+  const url = normalizeSourceUrl(shareText);
+
+  assert.equal(identifyPlatform(url), 'bilibili');
+  assert.deepEqual(extractId(url, 'bilibili'), { type: 'video', id: 'BV1W4PXzJEDy' });
+});
+
+test('normalizeSourceUrl removes copied prose after a short link', () => {
+  assert.equal(
+    normalizeSourceUrl('https://b23.tv/abcdef，复制到浏览器打开'),
+    'https://b23.tv/abcdef',
+  );
+});

@@ -16,6 +16,23 @@ const PLATFORM_RULES = [
 ];
 
 /**
+ * Extract the first supported media URL from a raw URL or copied share text.
+ * @param {string} input
+ * @returns {string}
+ */
+export function normalizeSourceUrl(input) {
+  const text = String(input || '').trim();
+  if (!text) return text;
+
+  const candidates = text.match(/https?:\/\/[^\s<>"'，。；！？、）】,;\])]+/giu) || [];
+  for (const rawCandidate of candidates) {
+    const candidate = rawCandidate.replace(/[.!]+$/u, '');
+    if (identifyPlatform(candidate)) return candidate;
+  }
+  return text;
+}
+
+/**
  * Identify the platform from a URL string.
  * @param {string} urlStr
  * @returns {string|null} platform name or null
@@ -111,7 +128,7 @@ export function extractId(urlStr, platform) {
 
   if (platform === 'netease') {
     // MV: music.163.com/mv?id=xxx or music.163.com/#/mv?id=xxx
-    if (pathname.includes('/mv')) {
+    if (pathname.includes('/mv') || url.hash.includes('/mv')) {
       // Hash-based routing: #/mv?id=xxx
       const hash = url.hash;
       const mvHashMatch = hash.match(/\/mv\?id=(\d+)/);

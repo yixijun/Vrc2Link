@@ -1,9 +1,10 @@
 {
   "name": "vrc2link",
   "version": "2.0.0",
-  "description": "Bilibili & Netease stream resolver for VRChat — deploy on domestic server",
+  "description": "Bilibili and Netease media resolver for VRChat",
   "type": "module",
   "scripts": {
+    "test": "node test/run.js",
     "start": "node server.js",
     "dev": "node --watch server.js",
     "pm2:start": "pm2 start ecosystem.config.cjs",

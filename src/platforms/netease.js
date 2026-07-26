@@ -16,7 +16,7 @@ async function fetchJson(url, options = {}) {
 // ---- Song ----
 
 export async function parseSong(songId, options = {}) {
-  const { cookie = '' } = options;
+  const { cookie = '', quality: targetQuality } = options;
 
   const detail = await fetchJson(`https://music.163.com/api/song/detail?ids=[${songId}]`, { cookie });
   const song = detail?.songs?.[0];
@@ -28,9 +28,19 @@ export async function parseSong(songId, options = {}) {
   const album = song.album?.name || '';
   const duration = Math.floor((song.duration || 0) / 1000);
 
-  // Try bitrates descending
+  const bitrateByQuality = {
+    lossless: 999000,
+    '320k': 320000,
+    '256k': 256000,
+    '128k': 128000,
+  };
+  const bitrates = targetQuality
+    ? [bitrateByQuality[targetQuality]].filter(Boolean)
+    : [999000, 320000, 256000, 128000];
+
+  // Try bitrates descending, or only the explicitly requested bitrate.
   let url = null, quality = '';
-  for (const br of [999000, 320000, 256000, 128000]) {
+  for (const br of bitrates) {
     try {
       const pd = await fetchJson(
         `https://music.163.com/api/song/enhance/player/url?id=${songId}&ids=[${songId}]&br=${br}`,
