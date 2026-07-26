@@ -1,0 +1,7 @@
+name = "vrc2link"
+main = "src/index.js"
+compatibility_date = "2025-07-01"
+
+[observability]
+enabled = true
+head_sampling_rate = 1
