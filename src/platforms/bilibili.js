@@ -55,6 +55,7 @@ async function getMixKey(forwardIp, cookie) {
 
   const resp = await fetchWithRetry('https://api.bilibili.com/x/web-interface/nav', {
     platform: 'bilibili',
+    mode: 'api',
     forwardIp,
     headers: cookie ? { Cookie: cookie } : {},
   });
@@ -123,6 +124,7 @@ async function scrapeVideoPage(bvid, forwardIp, cookie) {
 
   const resp = await fetchWithRetry(`https://www.bilibili.com/video/${bvid}`, {
     platform: 'bilibili',
+    mode: 'page',
     forwardIp,
     headers,
   });
@@ -188,6 +190,7 @@ export async function parseVideo(bvid, options = {}) {
 
   const playResp = await fetchWithRetry(signedUrl, {
     platform: 'bilibili',
+    mode: 'api',
     forwardIp,
     headers: cookie ? { Cookie: cookie } : {},
   });
@@ -313,6 +316,7 @@ export async function parseLive(roomId, options = {}) {
     `https://api.live.bilibili.com/room/v1/Room/room_init?id=${roomId}`,
     {
       platform: 'bilibili',
+      mode: 'api',
       forwardIp,
       headers: cookie ? { Cookie: cookie } : {},
     }
@@ -336,6 +340,7 @@ export async function parseLive(roomId, options = {}) {
     `https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo?room_id=${realRoomId}&protocol=0,1&format=0,1,2&codec=0&platform=web`,
     {
       platform: 'bilibili',
+      mode: 'api',
       forwardIp,
       headers: cookie ? { Cookie: cookie } : {},
     }

@@ -1,36 +1,41 @@
 /**
  * Netease Cloud Music platform parser — song + MV.
- *
- * Song flow:
- *   1. song detail API → title, artist, cover, album
- *   2. player URL API (with cookie for high quality) → mp3/flac URL
- *   3. Fallback to public mirror URL if API returns empty
- *
- * MV flow:
- *   1. MV detail API → title, artist, cover
- *   2. MV URL API → mp4 streams at various resolutions
  */
 
-import { fetchJson } from '../utils/http.js';
+import { fetchWithRetry } from '../utils/http.js';
 import { neteaseQuality, neteaseMvQuality } from '../utils/quality.js';
+
+/**
+ * Helper: fetch JSON from an API endpoint.
+ */
+async function fetchApiJson(url, options = {}) {
+  const { cookie, forwardIp } = options;
+  const headers = {};
+  if (cookie) headers.Cookie = cookie;
+
+  const resp = await fetchWithRetry(url, {
+    platform: 'netease',
+    mode: 'api',
+    forwardIp,
+    headers,
+  });
+
+  if (!resp.ok) {
+    throw new Error(`HTTP ${resp.status} from ${url}`);
+  }
+
+  return resp.json();
+}
 
 // ---- Song parsing ----
 
-/**
- * Parse a Netease song.
- * @param {string} songId
- * @param {object} options
- * @param {string} [options.cookie]
- * @param {string} [options.forwardIp]
- * @returns {Promise<object>}
- */
 export async function parseSong(songId, options = {}) {
   const { cookie = '', forwardIp } = options;
 
   // Step 1: Get song detail
-  const detailData = await fetchJson(
+  const detailData = await fetchApiJson(
     `https://music.163.com/api/song/detail?ids=[${songId}]`,
-    { platform: 'netease', forwardIp, cookie }
+    { cookie, forwardIp }
   );
 
   const song = detailData?.songs?.[0];
@@ -44,18 +49,16 @@ export async function parseSong(songId, options = {}) {
   const album = song.album?.name || '';
   const duration = Math.floor((song.duration || 0) / 1000);
 
-  // Step 2: Get play URL — try official API first
+  // Step 2: Get play URL — try official API with descending bitrates
   let streamUrl = null;
   let streamQuality = '';
-
-  // Try multiple bitrates: lossless → 320k → 256k → 128k
   const bitrates = [999000, 320000, 256000, 128000];
 
   for (const br of bitrates) {
     try {
-      const playerData = await fetchJson(
+      const playerData = await fetchApiJson(
         `https://music.163.com/api/song/enhance/player/url?id=${songId}&ids=[${songId}]&br=${br}`,
-        { platform: 'netease', forwardIp, cookie }
+        { cookie, forwardIp }
       );
 
       const url = playerData?.data?.[0]?.url;
@@ -69,12 +72,10 @@ export async function parseSong(songId, options = {}) {
     }
   }
 
-  // Step 3: Fallback to public mirror if official API returned nothing
+  // Step 3: Fallback to public mirror
   if (!streamUrl) {
-    // The public mirror URL works without cookie but is unreliable
-    const mirrorUrl = `https://music.163.com/song/media/outer/url?id=${songId}.mp3`;
-    streamUrl = mirrorUrl;
-    streamQuality = '128k'; // mirror only serves 128k
+    streamUrl = `https://music.163.com/song/media/outer/url?id=${songId}.mp3`;
+    streamQuality = '128k';
   }
 
   const streams = [];
@@ -98,7 +99,6 @@ export async function parseSong(songId, options = {}) {
       author,
       album,
       duration,
-      // Track if we got high quality (cookie was effective)
       hasHighQuality: streamQuality === '320k' || streamQuality === 'lossless',
     },
     streams,
@@ -107,21 +107,13 @@ export async function parseSong(songId, options = {}) {
 
 // ---- MV parsing ----
 
-/**
- * Parse a Netease MV.
- * @param {string} mvId
- * @param {object} options
- * @param {string} [options.cookie]
- * @param {string} [options.forwardIp]
- * @returns {Promise<object>}
- */
 export async function parseMv(mvId, options = {}) {
   const { cookie = '', forwardIp } = options;
 
   // Step 1: Get MV detail
-  const detailData = await fetchJson(
+  const detailData = await fetchApiJson(
     `https://music.163.com/api/mv/detail?id=${mvId}`,
-    { platform: 'netease', forwardIp, cookie }
+    { cookie, forwardIp }
   );
 
   const mvData = detailData?.data;
@@ -134,15 +126,15 @@ export async function parseMv(mvId, options = {}) {
   const cover = mvData.cover || '';
   const duration = Math.floor((mvData.duration || 0) / 1000);
 
-  // Step 2: Get MV play URL at multiple resolutions
+  // Step 2: Get MV play URLs at multiple resolutions
   const resolutions = [1080, 720, 480, 240];
   const streams = [];
 
   for (const r of resolutions) {
     try {
-      const urlData = await fetchJson(
+      const urlData = await fetchApiJson(
         `https://music.163.com/api/mv/url?id=${mvId}&r=${r}`,
-        { platform: 'netease', forwardIp, cookie }
+        { cookie, forwardIp }
       );
 
       const url = urlData?.data?.url;
@@ -160,7 +152,6 @@ export async function parseMv(mvId, options = {}) {
     }
   }
 
-  // If no CDN URL at all, error
   if (streams.length === 0) {
     throw new Error(`No playable MV URL found for: ${mvId}`);
   }
