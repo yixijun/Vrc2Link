@@ -8,6 +8,10 @@
  * that can be copied into VRChat.
  */
 
+function escapeHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 export function handleResolve(request) {
   const url = new URL(request.url);
   const rawUrl = url.searchParams.get('url') || '';
