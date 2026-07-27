@@ -27,6 +27,7 @@ test('only the new API endpoints are exposed', async () => {
   const html = await root.text();
   assert.match(html, /<title>Vrc2Link API<\/title>/);
   assert.match(html, /id="request-builder"/);
+  assert.match(html, /id="paste-media"/);
   assert.match(html, /<code>\/api<\/code>/);
   assert.match(html, /<code>\/play<\/code>/);
   assert.match(html, /DASH 音视频分离流/);
@@ -61,6 +62,7 @@ test('only the new API endpoints are exposed', async () => {
     'quality-help': createControl(),
     'platform-hint': createControl(),
     'request-preview': createControl(),
+    'paste-media': createControl(),
     'copy-request': createControl(),
   };
   const documentStub = {
@@ -72,7 +74,13 @@ test('only the new API endpoints are exposed', async () => {
     open() {},
     setTimeout() {},
   };
-  const navigatorStub = { clipboard: { writeText: async () => {} } };
+  const pastedText = '【分享标题】 https://music.163.com/song?id=186016，复制打开';
+  const navigatorStub = {
+    clipboard: {
+      readText: async () => pastedText,
+      writeText: async () => {},
+    },
+  };
   new Function('document', 'window', 'navigator', script)(documentStub, windowStub, navigatorStub);
 
   const detect = (url) => {
@@ -80,12 +88,20 @@ test('only the new API endpoints are exposed', async () => {
     controls['request-builder'].listeners.input();
     return controls.quality.children.map((option) => option.value);
   };
-  assert.deepEqual(detect('https://www.bilibili.com/video/BV1test'), ['', '360p', '480p', '720p', '1080p', '4k', '8k']);
+  assert.deepEqual(
+    detect('【杜比视界·全景声】 https://www.bilibili.com/video/BV1W4PXzJEDy/?share_source=copy_web，要这种也能识别'),
+    ['', '360p', '480p', '720p', '1080p', '4k', '8k'],
+  );
   assert.match(controls['platform-hint'].textContent, /Bilibili 视频/);
   assert.deepEqual(detect('https://live.bilibili.com/6'), ['', 'original']);
   assert.deepEqual(detect('https://music.163.com/song?id=186016'), ['', '128k', '256k', '320k', 'lossless']);
   assert.match(controls['platform-hint'].textContent, /网易云歌曲/);
   assert.deepEqual(detect('https://music.163.com/#/mv?id=10970707'), ['', '360p', '480p', '720p', '1080p']);
+
+  await controls['paste-media'].listeners.click();
+  assert.equal(controls['media-url'].value, pastedText);
+  assert.match(controls['platform-hint'].textContent, /网易云歌曲/);
+  assert.equal(controls['paste-media'].textContent, '已粘贴');
 
   for (const path of ['/a', '/r', '/api/parse']) {
     const response = await handleRequest(new Request(`http://localhost${path}`));

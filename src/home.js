@@ -92,8 +92,8 @@ const HOME_HTML = `<!doctype html>
 
     main { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
     .intro {
-      min-height: 330px;
-      padding: 62px 0 42px;
+      min-height: 280px;
+      padding: 48px 0 36px;
       display: grid;
       grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
       align-items: end;
@@ -136,6 +136,7 @@ const HOME_HTML = `<!doctype html>
       border: 1px solid var(--line);
       border-radius: 8px;
       background: var(--surface);
+      box-shadow: 0 12px 32px rgba(23, 32, 42, 0.07);
     }
     .field { display: grid; gap: 7px; margin-bottom: 18px; }
     .field:last-child { margin-bottom: 0; }
@@ -163,7 +164,7 @@ const HOME_HTML = `<!doctype html>
     .platform-hint[data-platform="bilibili"]::before { background: var(--accent); }
     .platform-hint[data-platform="netease"] { color: #b42318; }
     .platform-hint[data-platform="netease"]::before { background: #d92d20; }
-    input[type="url"], input[type="password"], select {
+    input[type="text"], input[type="url"], input[type="password"], select {
       width: 100%;
       min-height: 44px;
       padding: 9px 12px;
@@ -173,6 +174,28 @@ const HOME_HTML = `<!doctype html>
       color: var(--ink);
       outline: none;
     }
+    .input-with-action {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 88px;
+    }
+    .input-with-action input {
+      position: relative;
+      z-index: 1;
+      min-width: 0;
+      border-radius: 6px 0 0 6px;
+    }
+    .input-with-action input:focus { z-index: 2; }
+    .paste-button {
+      min-height: 44px;
+      margin-left: -1px;
+      padding: 8px 12px;
+      border-color: #b9c2cd;
+      border-radius: 0 6px 6px 0;
+      background: #f7f8fa;
+      color: var(--ink);
+      white-space: nowrap;
+    }
+    .paste-button:hover { background: #e9edf2; }
     input:focus, select:focus, button:focus-visible {
       border-color: var(--focus);
       box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
@@ -354,7 +377,10 @@ const HOME_HTML = `<!doctype html>
         <div>
           <div class="field">
             <label class="field-label" for="media-url">媒体链接或分享文本</label>
-            <input id="media-url" name="url" type="text" inputmode="url" required placeholder="【视频标题】 https://www.bilibili.com/video/BV..." autocomplete="off">
+            <div class="input-with-action">
+              <input id="media-url" name="url" type="text" inputmode="url" required placeholder="【视频标题】 https://www.bilibili.com/video/BV..." autocomplete="off" aria-describedby="platform-hint">
+              <button class="paste-button" id="paste-media" type="button">粘贴</button>
+            </div>
             <p class="platform-hint" id="platform-hint">等待识别媒体平台</p>
           </div>
           <fieldset>
@@ -496,6 +522,7 @@ NETEASE_COOKIE=完整的网易云 Cookie 请求头</code></pre>
     const qualityHelp = document.getElementById('quality-help');
     const platformHint = document.getElementById('platform-hint');
     const preview = document.getElementById('request-preview');
+    const pasteButton = document.getElementById('paste-media');
     const copyButton = document.getElementById('copy-request');
     let currentMediaKind = '';
 
@@ -622,6 +649,24 @@ NETEASE_COOKIE=完整的网易云 Cookie 请求头</code></pre>
       event.preventDefault();
       if (!form.reportValidity()) return;
       window.open(buildRequestUrl(), '_blank', 'noopener');
+    });
+    pasteButton.addEventListener('click', async function () {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (!text.trim()) {
+          platformHint.dataset.platform = '';
+          platformHint.textContent = '剪贴板为空';
+          return;
+        }
+        mediaUrl.value = text.trim();
+        updatePreview();
+        pasteButton.textContent = '已粘贴';
+        window.setTimeout(function () { pasteButton.textContent = '粘贴'; }, 1200);
+      } catch {
+        platformHint.dataset.platform = '';
+        platformHint.textContent = '无法读取剪贴板，请允许浏览器权限或手动粘贴';
+        mediaUrl.focus();
+      }
     });
     copyButton.addEventListener('click', async function () {
       const requestUrl = buildRequestUrl();

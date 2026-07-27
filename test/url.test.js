@@ -11,7 +11,7 @@ test('extractId recognises hash-based Netease MV links', () => {
 });
 
 test('normalizeSourceUrl extracts a Bilibili URL from copied share text', () => {
-  const shareText = '【杜比视界·全景声|超时空辉夜姬特别混音版「星降る海」~NERX Remix~】 https://www.bilibili.com/video/BV1W4PXzJEDy/?share_source=copy_web&vd_source=ca506b4a36411ffbeb99dd4bb414f924,这种也要能识别';
+  const shareText = '【杜比视界·全景声|超时空辉夜姬特别混音版「星降る海」~NERX Remix~】 https://www.bilibili.com/video/BV1W4PXzJEDy/?share_source=copy_web&vd_source=ca506b4a36411ffbeb99dd4bb414f924，要这种链接也能识别，自动去除中文啥的';
 
   const url = normalizeSourceUrl(shareText);
 
