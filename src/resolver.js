@@ -20,7 +20,16 @@ export async function resolveMedia(rawUrl, options = {}) {
 
   const platform = identifyPlatform(target);
   if (!platform) {
-    throw new AppError(400, 'unsupported_url', 'Only Bilibili, Netease, Douyin, and Kuaishou URLs are supported');
+    throw new AppError(400, 'unsupported_url', 'Only Bilibili, Netease, Douyin, Kuaishou, and YouTube URLs are supported');
+  }
+
+  if (platform === 'youtube') {
+    return normalizeResult({
+      platform: 'youtube',
+      type: 'video',
+      meta: { id: youtubeVideoId(target), title: 'YouTube' },
+      streams: [{ quality: 'original', format: 'url', codec: 'passthrough', url: target }],
+    }, authenticated);
   }
 
   const extracted = extractId(target, platform);
@@ -39,6 +48,15 @@ export async function resolveMedia(rawUrl, options = {}) {
     if (error instanceof AppError) throw error;
     throw new AppError(502, 'upstream_error', error.message);
   }
+}
+
+function youtubeVideoId(target) {
+  const url = new URL(target);
+  if (url.hostname === 'youtu.be' || url.hostname.endsWith('.youtu.be')) {
+    return url.pathname.split('/').filter(Boolean)[0] || '';
+  }
+  return url.searchParams.get('v') ||
+    url.pathname.match(/^\/(?:shorts|embed|live)\/([^/]+)/i)?.[1] || '';
 }
 
 export function selectPlayableStream(result, targetQuality) {

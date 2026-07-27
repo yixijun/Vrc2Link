@@ -50,3 +50,10 @@ test('normalizes a complete Douyin video share message', () => {
   assert.equal(identifyPlatform(url), 'douyin');
   assert.deepEqual(extractId(url, 'douyin'), { type: 'video', id: 'A7VeP3Y8yfc' });
 });
+
+test('recognises YouTube links in copied text', () => {
+  const url = normalizeSourceUrl('看看这个视频 https://youtu.be/dQw4w9WgXcQ?t=42 复制打开');
+
+  assert.equal(url, 'https://youtu.be/dQw4w9WgXcQ?t=42');
+  assert.equal(identifyPlatform(url), 'youtube');
+});

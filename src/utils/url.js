@@ -23,6 +23,11 @@ const PLATFORM_RULES = [
     domains: ['kuaishou.com', 'kwai.com', 'v.kuaishou.com'],
     shortDomains: ['v.kuaishou.com'],
   },
+  {
+    name: 'youtube',
+    domains: ['youtube.com', 'youtu.be', 'youtube-nocookie.com'],
+    shortDomains: [],
+  },
 ];
 const SHORT_LINK_CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_SHORT_LINK_CACHE_ENTRIES = 512;

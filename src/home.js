@@ -168,6 +168,8 @@ const HOME_HTML = `<!doctype html>
     .platform-hint[data-platform="douyin"]::before { background: #101828; }
     .platform-hint[data-platform="kuaishou"] { color: #c4320a; }
     .platform-hint[data-platform="kuaishou"]::before { background: #f04438; }
+    .platform-hint[data-platform="youtube"] { color: #b42318; }
+    .platform-hint[data-platform="youtube"]::before { background: #ff0000; }
     input[type="text"], input[type="url"], input[type="password"], select {
       width: 100%;
       min-height: 44px;
@@ -364,7 +366,7 @@ const HOME_HTML = `<!doctype html>
       <div>
         <p class="eyebrow">VRChat Media Resolver</p>
         <h1>Vrc2Link</h1>
-        <p class="lead">解析 Bilibili、抖音、快手视频与直播，以及网易云歌曲与 MV。详细结果使用 API，播放器地址使用 302 跳转。</p>
+        <p class="lead">解析 Bilibili、抖音、快手视频与直播，以及网易云歌曲与 MV；YouTube 链接直接交给 VRChat。详细结果使用 API，播放器地址使用 302 跳转。</p>
       </div>
       <div class="route-summary" aria-label="接口摘要">
         <div class="route-row"><span class="method">GET</span><code>/api</code><span>详细解析结果</span></div>
@@ -382,7 +384,7 @@ const HOME_HTML = `<!doctype html>
           <div class="field">
             <label class="field-label" for="media-url">媒体链接或分享文本</label>
             <div class="input-with-action">
-              <input id="media-url" name="url" type="text" inputmode="url" required placeholder="【分享标题】 粘贴 Bilibili、抖音、快手或网易云链接" autocomplete="off" aria-describedby="platform-hint">
+              <input id="media-url" name="url" type="text" inputmode="url" required placeholder="【分享标题】 粘贴 Bilibili、抖音、快手、YouTube 或网易云链接" autocomplete="off" aria-describedby="platform-hint">
               <button class="paste-button" id="paste-media" type="button">粘贴</button>
             </div>
             <p class="platform-hint" id="platform-hint">等待识别媒体平台</p>
@@ -435,7 +437,7 @@ const HOME_HTML = `<!doctype html>
           <table>
             <thead><tr><th>参数</th><th>必填</th><th>说明</th></tr></thead>
             <tbody>
-              <tr><td><code>url</code></td><td>是</td><td>Bilibili、抖音、快手、网易云媒体地址或复制的分享文本</td></tr>
+              <tr><td><code>url</code></td><td>是</td><td>Bilibili、抖音、快手、YouTube、网易云媒体地址或复制的分享文本</td></tr>
               <tr><td><code>key</code></td><td>否</td><td>启用服务器 Cookie 权限</td></tr>
             </tbody>
           </table>
@@ -458,7 +460,7 @@ const HOME_HTML = `<!doctype html>
           <table>
             <thead><tr><th>参数</th><th>必填</th><th>说明</th></tr></thead>
             <tbody>
-              <tr><td><code>url</code></td><td>是</td><td>Bilibili、抖音、快手、网易云媒体地址或复制的分享文本</td></tr>
+              <tr><td><code>url</code></td><td>是</td><td>Bilibili、抖音、快手、YouTube、网易云媒体地址或复制的分享文本</td></tr>
               <tr><td><code>quality</code></td><td>否</td><td>精确画质；不存在时返回 422</td></tr>
               <tr><td><code>key</code></td><td>否</td><td>启用服务器 Cookie 权限</td></tr>
             </tbody>
@@ -579,6 +581,12 @@ KUAISHOU_COOKIE=完整的快手 Cookie 请求头</code></pre>
         help: '快手分享页通常提供一个可直接播放的原画视频流；需要登录时请在服务端配置 Cookie。',
         qualities: [['', '自动选择'], ['original', '原画']],
       },
+      youtubeVideo: {
+        platform: 'youtube',
+        label: '已识别：YouTube 视频',
+        help: '不解析 YouTube 媒体流，/play 直接把原链接交给 VRChat。',
+        qualities: [['', '直接跳转']],
+      },
     };
 
     function selectedMode() {
@@ -628,6 +636,11 @@ KUAISHOU_COOKIE=完整的快手 Cookie 请求头</code></pre>
             hostname === 'kwai.com' || hostname.endsWith('.kwai.com')) {
           return 'kuaishouVideo';
         }
+        if (hostname === 'youtube.com' || hostname.endsWith('.youtube.com') ||
+            hostname === 'youtu.be' || hostname.endsWith('.youtu.be') ||
+            hostname === 'youtube-nocookie.com' || hostname.endsWith('.youtube-nocookie.com')) {
+          return 'youtubeVideo';
+        }
       } catch {
         return '';
       }
@@ -649,7 +662,7 @@ KUAISHOU_COOKIE=完整的快手 Cookie 请求头</code></pre>
       }));
 
       platformHint.dataset.platform = media?.platform || '';
-      platformHint.textContent = media?.label || '未识别：请粘贴 Bilibili、抖音、快手或网易云链接';
+      platformHint.textContent = media?.label || '未识别：请粘贴 Bilibili、抖音、快手、YouTube 或网易云链接';
       qualityHelp.textContent = media?.help || '识别媒体平台后显示对应的画质或音质。';
     }
 

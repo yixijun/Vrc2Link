@@ -106,6 +106,8 @@ test('only the new API endpoints are exposed', async () => {
   assert.match(controls['platform-hint'].textContent, /抖音视频/);
   assert.deepEqual(detect('https://v.kuaishou.com/abc123'), ['', 'original']);
   assert.match(controls['platform-hint'].textContent, /快手视频/);
+  assert.deepEqual(detect('看看这个 https://youtu.be/dQw4w9WgXcQ?t=42 复制打开'), ['']);
+  assert.match(controls['platform-hint'].textContent, /YouTube 视频/);
 
   await controls['paste-media'].listeners.click();
   assert.equal(controls['media-url'].value, pastedText);
@@ -188,4 +190,19 @@ test('/play redirects to the exact requested quality', async () => {
   );
   assert.equal(unavailable.status, 422);
   assert.equal((await unavailable.json()).error.code, 'quality_unavailable');
+});
+
+test('/play passes YouTube URLs through without upstream parsing', async (t) => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('YouTube must not be fetched'); };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const source = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42';
+  const response = await handleRequest(new Request(
+    `http://localhost/play?url=${encodeURIComponent(source)}`,
+  ));
+
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get('location'), source);
+  assert.equal(response.headers.get('x-stream-format'), 'url');
 });
