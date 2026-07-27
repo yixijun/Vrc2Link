@@ -19,6 +19,51 @@ test('parseShortVideo extracts a playable Douyin URL from page data', async (t) 
   assert.equal(result.streams[0].url, 'https://cdn.example/video.mp4');
 });
 
+test('parseShortVideo caches anonymous Kuaishou results', async (t) => {
+  const originalFetch = globalThis.fetch;
+  let upstreamRequests = 0;
+  globalThis.fetch = async () => {
+    upstreamRequests += 1;
+    return new Response(`
+      {"caption":"快手视频","playUrl":"https:\\/\\/cdn.example\\/kuaishou.mp4"}
+    `);
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const source = 'https://www.kuaishou.com/short-video/cacheFixture';
+  const first = await parseShortVideo('kuaishou', source, { id: 'cacheFixture' });
+  const second = await parseShortVideo('kuaishou', source, { id: 'cacheFixture' });
+
+  assert.equal(first.streams[0].url, 'https://cdn.example/kuaishou.mp4');
+  assert.equal(second.streams[0].url, 'https://cdn.example/kuaishou.mp4');
+  assert.equal(upstreamRequests, 1);
+});
+
+test('/play uses the Kuaishou mobile page because desktop pages can omit streams', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const userAgents = [];
+  globalThis.fetch = async (_input, init = {}) => {
+    const userAgent = new Headers(init.headers).get('user-agent') || '';
+    userAgents.push(userAgent);
+    if (!userAgent.includes('Mobile')) return Response.json({ result: 2, error_msg: null });
+    return new Response(`
+      {"downloadUrl":"https:\\/\\/cp.m.kuaishou.com\\/2022\\/download?layoutType=4",
+       "adaptationSet":[{"representation":[{"backupUrl":["https:\\/\\/cdn.example\\/kuaishou-mobile.mp4"]}]}]}
+    `);
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const source = 'https://www.kuaishou.com/short-video/mobileFallbackFixture';
+  const response = await handleRequest(new Request(
+    `http://localhost/play?url=${encodeURIComponent(source)}`,
+  ));
+
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get('location'), 'https://cdn.example/kuaishou-mobile.mp4');
+  assert.equal(userAgents.length, 1);
+  assert.equal(userAgents[0].includes('Mobile'), true);
+});
+
 test('/play resolves a Douyin Jingxuan URL through the mobile share page', async (t) => {
   const originalFetch = globalThis.fetch;
   let upstreamRequests = 0;

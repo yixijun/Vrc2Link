@@ -15,28 +15,28 @@ const MOBILE_USER_AGENT =
   'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 Chrome/131.0.0.0 Mobile Safari/537.36';
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 256;
-const publicDouyinCache = new Map();
+const publicShortVideoCache = new Map();
 
 export async function parseShortVideo(platform, sourceUrl, options = {}) {
   const { cookie = '' } = options;
-  if (platform !== 'douyin' || cookie) {
+  if (cookie) {
     return fetchShortVideo(platform, sourceUrl, options);
   }
 
-  const cacheKey = String(options.id || sourceUrl);
-  const cached = publicDouyinCache.get(cacheKey);
+  const cacheKey = `${platform}:${options.id || sourceUrl}`;
+  const cached = publicShortVideoCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.result;
-  if (cached) publicDouyinCache.delete(cacheKey);
+  if (cached) publicShortVideoCache.delete(cacheKey);
 
-  if (publicDouyinCache.size >= MAX_CACHE_ENTRIES) {
-    publicDouyinCache.delete(publicDouyinCache.keys().next().value);
+  if (publicShortVideoCache.size >= MAX_CACHE_ENTRIES) {
+    publicShortVideoCache.delete(publicShortVideoCache.keys().next().value);
   }
   const result = fetchShortVideo(platform, sourceUrl, options);
-  publicDouyinCache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, result });
+  publicShortVideoCache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, result });
   try {
     return await result;
   } catch (error) {
-    publicDouyinCache.delete(cacheKey);
+    publicShortVideoCache.delete(cacheKey);
     throw error;
   }
 }
@@ -50,7 +50,9 @@ async function fetchShortVideo(platform, sourceUrl, options) {
   const response = await fetchWithRetry(pageUrl, {
     platform,
     cookie,
-    userAgent: platform === 'douyin' ? MOBILE_USER_AGENT : undefined,
+    userAgent: platform === 'douyin' || platform === 'kuaishou'
+      ? MOBILE_USER_AGENT
+      : undefined,
   });
   if (!response.ok) throw new Error(`HTTP ${response.status} from ${pageUrl}`);
 
@@ -107,9 +109,18 @@ function findField(html, keys) {
   return '';
 }
 
-function isVideoUrl(url) {
-  return /\.(?:mp4|m3u8|flv)(?:[?#]|$)/iu.test(url) ||
-    /(?:play|download|video|aweme|ksurl|txvideo)/iu.test(url);
+function isVideoUrl(value) {
+  try {
+    const url = new URL(value);
+    const pathname = url.pathname.toLowerCase();
+    const mimeType = url.searchParams.get('mime_type') || '';
+    return /\.(?:mp4|m3u8|flv)$/u.test(pathname) ||
+      /\/aweme\/v\d+\/play(?:wm)?\//u.test(pathname) ||
+      mimeType.startsWith('video_') ||
+      /(?:ksurl|txvideo)/iu.test(url.hostname);
+  } catch {
+    return false;
+  }
 }
 
 function decodeUrl(value) {
