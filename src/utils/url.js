@@ -24,6 +24,9 @@ const PLATFORM_RULES = [
     shortDomains: ['v.kuaishou.com'],
   },
 ];
+const SHORT_LINK_CACHE_TTL_MS = 5 * 60 * 1000;
+const MAX_SHORT_LINK_CACHE_ENTRIES = 512;
+const shortLinkCache = new Map();
 
 /**
  * Extract the first supported media URL from a raw URL or copied share text.
@@ -88,10 +91,30 @@ export function isShortLink(urlStr) {
 export async function expandShortLink(urlStr, userAgent) {
   if (!isShortLink(urlStr)) return urlStr;
 
+  const cached = shortLinkCache.get(urlStr);
+  if (cached && cached.expiresAt > Date.now()) return cached.result;
+  if (cached) shortLinkCache.delete(urlStr);
+
+  if (shortLinkCache.size >= MAX_SHORT_LINK_CACHE_ENTRIES) {
+    shortLinkCache.delete(shortLinkCache.keys().next().value);
+  }
+  const result = requestShortLink(urlStr, userAgent);
+  shortLinkCache.set(urlStr, { expiresAt: Date.now() + SHORT_LINK_CACHE_TTL_MS, result });
+  try {
+    const expanded = await result;
+    if (expanded === urlStr) shortLinkCache.delete(urlStr);
+    return expanded;
+  } catch (error) {
+    shortLinkCache.delete(urlStr);
+    throw error;
+  }
+}
+
+async function requestShortLink(urlStr, userAgent) {
   const resp = await fetch(urlStr, {
     method: 'HEAD',
     redirect: 'manual',
-    headers: { 'User-Agent': userAgent },
+    headers: userAgent ? { 'User-Agent': userAgent } : undefined,
   });
 
   if (resp.status >= 300 && resp.status < 400 && resp.headers.has('location')) {

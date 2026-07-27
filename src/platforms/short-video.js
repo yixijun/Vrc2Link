@@ -13,8 +13,35 @@ const VIDEO_KEYS = [
 ];
 const MOBILE_USER_AGENT =
   'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 Chrome/131.0.0.0 Mobile Safari/537.36';
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const MAX_CACHE_ENTRIES = 256;
+const publicDouyinCache = new Map();
 
 export async function parseShortVideo(platform, sourceUrl, options = {}) {
+  const { cookie = '' } = options;
+  if (platform !== 'douyin' || cookie) {
+    return fetchShortVideo(platform, sourceUrl, options);
+  }
+
+  const cacheKey = String(options.id || sourceUrl);
+  const cached = publicDouyinCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.result;
+  if (cached) publicDouyinCache.delete(cacheKey);
+
+  if (publicDouyinCache.size >= MAX_CACHE_ENTRIES) {
+    publicDouyinCache.delete(publicDouyinCache.keys().next().value);
+  }
+  const result = fetchShortVideo(platform, sourceUrl, options);
+  publicDouyinCache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, result });
+  try {
+    return await result;
+  } catch (error) {
+    publicDouyinCache.delete(cacheKey);
+    throw error;
+  }
+}
+
+async function fetchShortVideo(platform, sourceUrl, options) {
   const { cookie = '' } = options;
   // Desktop Douyin pages return an anti-bot shell; the official mobile share page embeds video data.
   const pageUrl = platform === 'douyin' && options.id
