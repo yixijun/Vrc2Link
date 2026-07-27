@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const CONFIG_KEYS = ['PORT', 'API_KEY', 'BILIBILI_COOKIE', 'NETEASE_COOKIE'];
+const CONFIG_KEYS = [
+  'PORT', 'API_KEY', 'BILIBILI_COOKIE', 'NETEASE_COOKIE', 'DOUYIN_COOKIE', 'KUAISHOU_COOKIE',
+];
 
 export function parseConfigFile(text) {
   const config = {};

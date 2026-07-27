@@ -9,6 +9,8 @@ module.exports = {
       API_KEY: process.env.API_KEY || '',
       BILIBILI_COOKIE: process.env.BILIBILI_COOKIE || '',
       NETEASE_COOKIE: process.env.NETEASE_COOKIE || '',
+      DOUYIN_COOKIE: process.env.DOUYIN_COOKIE || '',
+      KUAISHOU_COOKIE: process.env.KUAISHOU_COOKIE || '',
     },
     log_date_format: 'YYYY-MM-DD HH:mm:ss',
     error_file: './logs/error.log',

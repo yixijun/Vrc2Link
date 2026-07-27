@@ -164,6 +164,10 @@ const HOME_HTML = `<!doctype html>
     .platform-hint[data-platform="bilibili"]::before { background: var(--accent); }
     .platform-hint[data-platform="netease"] { color: #b42318; }
     .platform-hint[data-platform="netease"]::before { background: #d92d20; }
+    .platform-hint[data-platform="douyin"] { color: #344054; }
+    .platform-hint[data-platform="douyin"]::before { background: #101828; }
+    .platform-hint[data-platform="kuaishou"] { color: #c4320a; }
+    .platform-hint[data-platform="kuaishou"]::before { background: #f04438; }
     input[type="text"], input[type="url"], input[type="password"], select {
       width: 100%;
       min-height: 44px;
@@ -360,7 +364,7 @@ const HOME_HTML = `<!doctype html>
       <div>
         <p class="eyebrow">VRChat Media Resolver</p>
         <h1>Vrc2Link</h1>
-        <p class="lead">解析 Bilibili 视频与直播、网易云歌曲与 MV。详细结果使用 API，播放器地址使用 302 跳转。</p>
+        <p class="lead">解析 Bilibili、抖音、快手视频与直播，以及网易云歌曲与 MV。详细结果使用 API，播放器地址使用 302 跳转。</p>
       </div>
       <div class="route-summary" aria-label="接口摘要">
         <div class="route-row"><span class="method">GET</span><code>/api</code><span>详细解析结果</span></div>
@@ -378,7 +382,7 @@ const HOME_HTML = `<!doctype html>
           <div class="field">
             <label class="field-label" for="media-url">媒体链接或分享文本</label>
             <div class="input-with-action">
-              <input id="media-url" name="url" type="text" inputmode="url" required placeholder="【视频标题】 https://www.bilibili.com/video/BV..." autocomplete="off" aria-describedby="platform-hint">
+              <input id="media-url" name="url" type="text" inputmode="url" required placeholder="【分享标题】 粘贴 Bilibili、抖音、快手或网易云链接" autocomplete="off" aria-describedby="platform-hint">
               <button class="paste-button" id="paste-media" type="button">粘贴</button>
             </div>
             <p class="platform-hint" id="platform-hint">等待识别媒体平台</p>
@@ -431,7 +435,7 @@ const HOME_HTML = `<!doctype html>
           <table>
             <thead><tr><th>参数</th><th>必填</th><th>说明</th></tr></thead>
             <tbody>
-              <tr><td><code>url</code></td><td>是</td><td>Bilibili、网易云媒体地址或复制的分享文本</td></tr>
+              <tr><td><code>url</code></td><td>是</td><td>Bilibili、抖音、快手、网易云媒体地址或复制的分享文本</td></tr>
               <tr><td><code>key</code></td><td>否</td><td>启用服务器 Cookie 权限</td></tr>
             </tbody>
           </table>
@@ -454,7 +458,7 @@ const HOME_HTML = `<!doctype html>
           <table>
             <thead><tr><th>参数</th><th>必填</th><th>说明</th></tr></thead>
             <tbody>
-              <tr><td><code>url</code></td><td>是</td><td>Bilibili、网易云媒体地址或复制的分享文本</td></tr>
+              <tr><td><code>url</code></td><td>是</td><td>Bilibili、抖音、快手、网易云媒体地址或复制的分享文本</td></tr>
               <tr><td><code>quality</code></td><td>否</td><td>精确画质；不存在时返回 422</td></tr>
               <tr><td><code>key</code></td><td>否</td><td>启用服务器 Cookie 权限</td></tr>
             </tbody>
@@ -471,7 +475,7 @@ const HOME_HTML = `<!doctype html>
     <section id="auth">
       <div class="section-heading">
         <h2>鉴权与 Cookie</h2>
-        <p>平台 Cookie 只保存在服务器环境变量中。</p>
+          <p>平台 Cookie 只保存在服务器环境变量中，只有携带正确 <code>key</code> 时才会启用。</p>
       </div>
       <div class="note-grid">
         <div>
@@ -491,7 +495,9 @@ const HOME_HTML = `<!doctype html>
         <pre><code>PORT=7890
 API_KEY=替换成随机密钥
 BILIBILI_COOKIE=完整的 Bilibili Cookie 请求头
-NETEASE_COOKIE=完整的网易云 Cookie 请求头</code></pre>
+NETEASE_COOKIE=完整的网易云 Cookie 请求头
+DOUYIN_COOKIE=完整的抖音 Cookie 请求头
+KUAISHOU_COOKIE=完整的快手 Cookie 请求头</code></pre>
       </div>
     </section>
 
@@ -561,6 +567,18 @@ NETEASE_COOKIE=完整的网易云 Cookie 请求头</code></pre>
           ['720p', '720p'], ['1080p', '1080p'],
         ],
       },
+      douyinVideo: {
+        platform: 'douyin',
+        label: '已识别：抖音视频',
+        help: '抖音分享页通常提供一个可直接播放的原画视频流；需要登录时请在服务端配置 Cookie。',
+        qualities: [['', '自动选择'], ['original', '原画']],
+      },
+      kuaishouVideo: {
+        platform: 'kuaishou',
+        label: '已识别：快手视频',
+        help: '快手分享页通常提供一个可直接播放的原画视频流；需要登录时请在服务端配置 Cookie。',
+        qualities: [['', '自动选择'], ['original', '原画']],
+      },
     };
 
     function selectedMode() {
@@ -602,6 +620,14 @@ NETEASE_COOKIE=完整的网易云 Cookie 请求头</code></pre>
             hostname === '163cn.tv' || hostname === 'y.music.163.com') {
           return route.includes('/mv') ? 'neteaseMv' : 'neteaseSong';
         }
+        if (hostname === 'douyin.com' || hostname.endsWith('.douyin.com') ||
+            hostname === 'iesdouyin.com' || hostname.endsWith('.iesdouyin.com')) {
+          return 'douyinVideo';
+        }
+        if (hostname === 'kuaishou.com' || hostname.endsWith('.kuaishou.com') ||
+            hostname === 'kwai.com' || hostname.endsWith('.kwai.com')) {
+          return 'kuaishouVideo';
+        }
       } catch {
         return '';
       }
@@ -623,7 +649,7 @@ NETEASE_COOKIE=完整的网易云 Cookie 请求头</code></pre>
       }));
 
       platformHint.dataset.platform = media?.platform || '';
-      platformHint.textContent = media?.label || '未识别：请粘贴 Bilibili 或网易云链接';
+      platformHint.textContent = media?.label || '未识别：请粘贴 Bilibili、抖音、快手或网易云链接';
       qualityHelp.textContent = media?.help || '识别媒体平台后显示对应的画质或音质。';
     }
 

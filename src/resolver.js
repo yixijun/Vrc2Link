@@ -1,6 +1,7 @@
 import { AppError } from './errors.js';
 import { parseLive, parseVideo } from './platforms/bilibili.js';
 import { parseMv, parseSong } from './platforms/netease.js';
+import { parseShortVideo } from './platforms/short-video.js';
 import { qualityRank } from './utils/quality.js';
 import { expandShortLink, extractId, identifyPlatform, normalizeSourceUrl } from './utils/url.js';
 
@@ -19,7 +20,7 @@ export async function resolveMedia(rawUrl, options = {}) {
 
   const platform = identifyPlatform(target);
   if (!platform) {
-    throw new AppError(400, 'unsupported_url', 'Only Bilibili and Netease URLs are supported');
+    throw new AppError(400, 'unsupported_url', 'Only Bilibili, Netease, Douyin, and Kuaishou URLs are supported');
   }
 
   const extracted = extractId(target, platform);
@@ -29,7 +30,7 @@ export async function resolveMedia(rawUrl, options = {}) {
 
   const cookie = cookies[platform] || '';
   try {
-    const result = await parsePlatform(platform, extracted, { cookie, quality });
+    const result = await parsePlatform(platform, extracted, { cookie, quality, sourceUrl: target });
     if (!result.streams?.some((stream) => stream.url)) {
       throw new Error('No playable streams found');
     }
@@ -75,6 +76,9 @@ async function parsePlatform(platform, extracted, options) {
     return extracted.type === 'live'
       ? parseLive(extracted.id, options)
       : parseVideo(extracted.id, options);
+  }
+  if (platform === 'douyin' || platform === 'kuaishou') {
+    return parseShortVideo(platform, options.sourceUrl, { ...options, id: extracted.id });
   }
   return extracted.type === 'mv'
     ? parseMv(extracted.id, options)

@@ -97,6 +97,10 @@ test('only the new API endpoints are exposed', async () => {
   assert.deepEqual(detect('https://music.163.com/song?id=186016'), ['', '128k', '256k', '320k', 'lossless']);
   assert.match(controls['platform-hint'].textContent, /网易云歌曲/);
   assert.deepEqual(detect('https://music.163.com/#/mv?id=10970707'), ['', '360p', '480p', '720p', '1080p']);
+  assert.deepEqual(detect('https://v.douyin.com/abc123'), ['', 'original']);
+  assert.match(controls['platform-hint'].textContent, /抖音视频/);
+  assert.deepEqual(detect('https://v.kuaishou.com/abc123'), ['', 'original']);
+  assert.match(controls['platform-hint'].textContent, /快手视频/);
 
   await controls['paste-media'].listeners.click();
   assert.equal(controls['media-url'].value, pastedText);
@@ -170,6 +174,7 @@ test('/play redirects to the exact requested quality', async () => {
   );
   assert.equal(selected.status, 302);
   assert.equal(selected.headers.get('location'), 'https://cdn.example/360.mp4');
+  assert.equal(selected.headers.get('referrer-policy'), 'no-referrer');
   assert.equal(selected.headers.get('x-stream-quality'), '360p');
 
   const unavailable = await handleRequest(

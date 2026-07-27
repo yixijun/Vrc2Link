@@ -11,20 +11,22 @@ const UA =
 const PLATFORM = {
   bilibili: { referer: 'https://www.bilibili.com/', origin: 'https://www.bilibili.com' },
   netease:  { referer: 'https://music.163.com/',     origin: 'https://music.163.com' },
+  douyin:   { referer: 'https://www.douyin.com/',    origin: 'https://www.douyin.com' },
+  kuaishou: { referer: 'https://www.kuaishou.com/',  origin: 'https://www.kuaishou.com' },
 };
 
 /**
  * Fetch with retry on network errors and 5xx.
  * @param {string} url
- * @param {{ platform?: string, cookie?: string }} [options]
+ * @param {{ platform?: string, cookie?: string, userAgent?: string }} [options]
  * @returns {Promise<Response>}
  */
 export async function fetchWithRetry(url, options = {}) {
-  const { platform, cookie } = options;
+  const { platform, cookie, userAgent = UA } = options;
   const cfg = PLATFORM[platform];
 
   const headers = new Headers();
-  headers.set('User-Agent', UA);
+  headers.set('User-Agent', userAgent);
   headers.set('Accept', 'application/json, text/plain, */*');
   headers.set('Accept-Language', 'zh-CN,zh;q=0.9,en;q=0.8');
 

@@ -25,3 +25,18 @@ test('normalizeSourceUrl removes copied prose after a short link', () => {
     'https://b23.tv/abcdef',
   );
 });
+
+test('recognises Douyin and Kuaishou video links', () => {
+  assert.equal(identifyPlatform('https://www.douyin.com/video/7341234567890123456'), 'douyin');
+  assert.deepEqual(
+    extractId('https://www.douyin.com/video/7341234567890123456', 'douyin'),
+    { type: 'video', id: '7341234567890123456' },
+  );
+  assert.equal(identifyPlatform('https://www.kuaishou.com/short-video/3x7abc'), 'kuaishou');
+  assert.deepEqual(
+    extractId('https://www.kuaishou.com/short-video/3x7abc', 'kuaishou'),
+    { type: 'video', id: '3x7abc' },
+  );
+  assert.deepEqual(extractId('https://v.douyin.com/abc123', 'douyin'), { type: 'video', id: 'abc123' });
+  assert.deepEqual(extractId('https://v.kuaishou.com/abc123', 'kuaishou'), { type: 'video', id: 'abc123' });
+});

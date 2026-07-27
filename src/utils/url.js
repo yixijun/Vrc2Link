@@ -13,6 +13,16 @@ const PLATFORM_RULES = [
     domains: ['music.163.com', '163cn.tv', 'y.music.163.com'],
     shortDomains: ['163cn.tv', 'y.music.163.com'],
   },
+  {
+    name: 'douyin',
+    domains: ['douyin.com', 'iesdouyin.com', 'v.douyin.com'],
+    shortDomains: ['v.douyin.com'],
+  },
+  {
+    name: 'kuaishou',
+    domains: ['kuaishou.com', 'kwai.com', 'v.kuaishou.com'],
+    shortDomains: ['v.kuaishou.com'],
+  },
 ];
 
 /**
@@ -153,6 +163,30 @@ export function extractId(urlStr, platform) {
       }
       // Generic — try song first
       return { type: 'song', id };
+    }
+    return null;
+  }
+
+  if (platform === 'douyin') {
+    const match = pathname.match(/\/video\/(\d+)/i) || pathname.match(/\/share\/video\/(\d+)/i);
+    const modalId = searchParams.get('modal_id') || searchParams.get('mid');
+    if (match) return { type: 'video', id: match[1] };
+    if (modalId && /^\d+$/.test(modalId)) return { type: 'video', id: modalId };
+    if (url.hostname === 'v.douyin.com') {
+      const shortId = pathname.match(/^\/([^/]+)/)?.[1];
+      if (shortId) return { type: 'video', id: shortId };
+    }
+    return null;
+  }
+
+  if (platform === 'kuaishou') {
+    const match = pathname.match(/\/(?:short-video|video|f)\/([A-Za-z0-9_-]+)/i);
+    const photoId = searchParams.get('photoId') || searchParams.get('photo_id');
+    if (match) return { type: 'video', id: match[1] };
+    if (photoId) return { type: 'video', id: photoId };
+    if (url.hostname === 'v.kuaishou.com') {
+      const shortId = pathname.match(/^\/([^/]+)/)?.[1];
+      if (shortId) return { type: 'video', id: shortId };
     }
     return null;
   }

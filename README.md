@@ -1,6 +1,6 @@
 # Vrc2Link
 
-面向 VRChat 的 Bilibili、网易云媒体直链解析服务。运行时零第三方依赖，需要 Node.js 18 或更高版本。
+面向 VRChat 的 Bilibili、抖音、快手和网易云媒体直链解析服务。运行时零第三方依赖，需要 Node.js 18 或更高版本。
 
 ## 启动
 
@@ -12,7 +12,7 @@ npm start
 
 默认监听 `http://localhost:7890`。浏览器打开根路径即可查看 Web 使用说明，并通过请求生成器创建 `/api` 或 `/play` 链接。
 
-请求生成器会根据粘贴的链接自动识别 Bilibili 视频/直播、网易云歌曲/MV，并只显示对应的画质或音质选项。
+请求生成器会根据粘贴的链接自动识别 Bilibili 视频/直播、抖音/快手视频、网易云歌曲/MV，并只显示对应的画质或音质选项。
 
 `config.env` 使用一行一个配置的格式：
 
@@ -21,6 +21,8 @@ PORT=7890
 API_KEY=替换成随机密钥
 BILIBILI_COOKIE=粘贴完整的 Bilibili Cookie 请求头
 NETEASE_COOKIE=粘贴完整的网易云 Cookie 请求头
+DOUYIN_COOKIE=粘贴完整的抖音 Cookie 请求头
+KUAISHOU_COOKIE=粘贴完整的快手 Cookie 请求头
 ```
 
 Cookie 不需要挑选字段。在已登录的平台页面打开开发者工具，进入 Network，刷新页面，选择一个同平台请求，在 Request Headers 中复制完整的 `Cookie` 值，然后直接粘贴到对应等号后面。
@@ -33,6 +35,8 @@ Cookie 不需要挑选字段。在已登录的平台页面打开开发者工具�
 | `API_KEY` | 启用服务器 Cookie 的访问密钥 |
 | `BILIBILI_COOKIE` | Bilibili 登录 Cookie |
 | `NETEASE_COOKIE` | 网易云登录 Cookie |
+| `DOUYIN_COOKIE` | 抖音登录 Cookie |
+| `KUAISHOU_COOKIE` | 快手登录 Cookie |
 
 修改配置后需要重启服务。不传 `key` 时使用匿名解析；传入正确的 `key` 时才会使用服务器 Cookie；错误的 `key` 返回 `401`。
 
@@ -80,7 +84,7 @@ Bilibili 的 1080p、4K、8K 通常是 DASH 音视频分离流，而 `/play` 只
 /play?key=YOUR_KEY&quality=1080p&url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV1xx411c7mD
 ```
 
-支持的常用画质：`360p`、`480p`、`720p`、`1080p`、`4k`、`8k`、`128k`、`256k`、`320k`、`lossless`。
+支持的常用画质：`360p`、`480p`、`720p`、`1080p`、`4k`、`8k`、`original`、`128k`、`256k`、`320k`、`lossless`。抖音和快手当前返回分享页提供的 `original` 单文件流。
 
 ## 安全
 

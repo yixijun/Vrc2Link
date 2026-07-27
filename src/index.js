@@ -32,10 +32,12 @@ export async function handleRequest(request, dependencies = {}) {
 
     const authenticated = authenticate(url.searchParams.get('key'), env.API_KEY);
     const cookies = authenticated
-      ? {
-          bilibili: env.BILIBILI_COOKIE || '',
-          netease: env.NETEASE_COOKIE || '',
-        }
+      ? Object.fromEntries([
+          ['bilibili', env.BILIBILI_COOKIE],
+          ['netease', env.NETEASE_COOKIE],
+          ['douyin', env.DOUYIN_COOKIE],
+          ['kuaishou', env.KUAISHOU_COOKIE],
+        ].filter(([, value]) => value))
       : {};
     const quality = url.pathname === '/play' ? url.searchParams.get('quality') || undefined : undefined;
     const result = await resolve(url.searchParams.get('url'), {
@@ -53,6 +55,7 @@ export async function handleRequest(request, dependencies = {}) {
         Location: stream.url,
         'X-Stream-Quality': stream.quality,
         'X-Stream-Format': stream.format,
+        'Referrer-Policy': 'no-referrer',
         'Cache-Control': 'no-store',
       },
     }));
