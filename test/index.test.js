@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
+import { getClientIp } from '../src/client-ip.js';
 import { handleRequest } from '../src/index.js';
+import { createMemoryState, createSqliteState } from '../src/state.js';
 
 const SOURCE_URL = 'https://www.bilibili.com/video/BV1xx411c7mD';
 const MEDIA = {
@@ -32,6 +37,8 @@ test('only the new API endpoints are exposed', async () => {
   assert.match(html, /<code>\/play<\/code>/);
   assert.match(html, /DASH 音视频分离流/);
   assert.match(html, /为什么 1080p 会返回 422/);
+  assert.match(html, /生产运行状态保存在本机 SQLite/);
+  assert.match(html, /429 rate_limited/);
   assert.match(html, /function detectMedia\(input\)/);
   assert.match(html, /已识别：Bilibili 视频/);
   assert.match(html, /已识别：网易云歌曲/);
@@ -205,4 +212,181 @@ test('/play passes YouTube URLs through without upstream parsing', async (t) => 
   assert.equal(response.status, 302);
   assert.equal(response.headers.get('location'), source);
   assert.equal(response.headers.get('x-stream-format'), 'url');
+});
+
+test('anonymous parse results persist in SQLite across application instances', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'vrc2link-'));
+  const databasePath = join(directory, 'state.sqlite');
+
+  const firstState = createSqliteState(databasePath);
+  const first = await handleRequest(
+    new Request(`http://localhost/api?url=${encodeURIComponent(SOURCE_URL)}`),
+    { env: { CACHE_TTL_SECONDS: '300' }, resolve: async () => MEDIA, state: firstState },
+  );
+  assert.equal(first.status, 200);
+  firstState.close();
+
+  const secondState = createSqliteState(databasePath);
+  t.after(async () => {
+    secondState.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  const second = await handleRequest(
+    new Request(`http://localhost/api?url=${encodeURIComponent(SOURCE_URL)}`),
+    {
+      env: { CACHE_TTL_SECONDS: '300' },
+      resolve: async () => { throw new Error('resolver should not run for a cache hit'); },
+      state: secondState,
+    },
+  );
+
+  assert.equal(second.status, 200);
+  assert.deepEqual(await second.json(), MEDIA);
+  assert.equal(second.headers.get('x-cache'), 'HIT');
+});
+
+test('authenticated parse results are never cached', async () => {
+  const state = createMemoryState();
+  let resolveCount = 0;
+  const dependencies = {
+    env: { API_KEY: 'secret' },
+    resolve: async (_url, options) => {
+      resolveCount += 1;
+      return { ...MEDIA, authenticated: options.authenticated };
+    },
+    state,
+  };
+  const requestUrl = `http://localhost/api?key=secret&url=${encodeURIComponent(SOURCE_URL)}`;
+
+  const first = await handleRequest(new Request(requestUrl), dependencies);
+  const second = await handleRequest(new Request(requestUrl), dependencies);
+
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  assert.equal(first.headers.get('x-cache'), null);
+  assert.equal(second.headers.get('x-cache'), null);
+  assert.equal(resolveCount, 2);
+});
+
+test('anonymous requests over quota return 429 with retry information', async () => {
+  const state = createMemoryState();
+  const dependencies = {
+    env: {
+      RATE_LIMIT_ANON_PER_MINUTE: '1',
+      RATE_LIMIT_IP_PER_MINUTE: '10',
+      RATE_LIMIT_WINDOW_SECONDS: '60',
+    },
+    clientIp: '203.0.113.10',
+    resolve: async () => MEDIA,
+    state,
+  };
+  const requestUrl = `http://localhost/api?url=${encodeURIComponent(SOURCE_URL)}`;
+
+  const accepted = await handleRequest(new Request(requestUrl), dependencies);
+  assert.equal(accepted.status, 200);
+  assert.equal(accepted.headers.get('x-ratelimit-remaining'), '0');
+
+  const rejected = await handleRequest(new Request(requestUrl), dependencies);
+  assert.equal(rejected.status, 429);
+  assert.equal((await rejected.json()).error.code, 'rate_limited');
+  assert.match(rejected.headers.get('retry-after'), /^\d+$/u);
+  assert.equal(rejected.headers.get('x-ratelimit-limit'), '1');
+  assert.equal(rejected.headers.get('x-ratelimit-remaining'), '0');
+});
+
+test('authenticated requests use their separate API key quota', async () => {
+  const state = createMemoryState();
+  const dependencies = {
+    env: {
+      API_KEY: 'secret',
+      RATE_LIMIT_AUTH_PER_MINUTE: '1',
+      RATE_LIMIT_IP_PER_MINUTE: '10',
+    },
+    clientIp: '203.0.113.11',
+    resolve: async (_url, options) => ({ ...MEDIA, authenticated: options.authenticated }),
+    state,
+  };
+  const requestUrl = `http://localhost/api?key=secret&url=${encodeURIComponent(SOURCE_URL)}`;
+
+  const accepted = await handleRequest(new Request(requestUrl), dependencies);
+  const rejected = await handleRequest(new Request(requestUrl), dependencies);
+
+  assert.equal(accepted.status, 200);
+  assert.equal(accepted.headers.get('x-ratelimit-limit'), '1');
+  assert.equal(rejected.status, 429);
+  assert.equal((await rejected.json()).error.code, 'rate_limited');
+});
+
+test('anonymous and authenticated requests share the per-IP ceiling', async () => {
+  const state = createMemoryState();
+  const dependencies = {
+    env: {
+      API_KEY: 'secret',
+      RATE_LIMIT_ANON_PER_MINUTE: '10',
+      RATE_LIMIT_AUTH_PER_MINUTE: '10',
+      RATE_LIMIT_IP_PER_MINUTE: '1',
+    },
+    clientIp: '203.0.113.12',
+    resolve: async () => MEDIA,
+    state,
+  };
+  const anonymousUrl = `http://localhost/api?url=${encodeURIComponent(SOURCE_URL)}`;
+  const authenticatedUrl = `http://localhost/api?key=secret&url=${encodeURIComponent(SOURCE_URL)}`;
+
+  const accepted = await handleRequest(new Request(anonymousUrl), dependencies);
+  const rejected = await handleRequest(new Request(authenticatedUrl), dependencies);
+
+  assert.equal(accepted.status, 200);
+  assert.equal(rejected.status, 429);
+  assert.equal(rejected.headers.get('x-ratelimit-limit'), '1');
+});
+
+test('request logs are structured, correlated, and do not expose credentials', async () => {
+  const entries = [];
+  const response = await handleRequest(
+    new Request(`http://localhost/api?key=super-secret&url=${encodeURIComponent(SOURCE_URL)}`),
+    {
+      clientIp: '203.0.113.20',
+      env: {
+        API_KEY: 'super-secret',
+        BILIBILI_COOKIE: 'SESSDATA=private-cookie',
+      },
+      logger: (entry) => entries.push(entry),
+      requestId: 'request-fixture',
+      resolve: async () => ({ ...MEDIA, authenticated: true }),
+      state: createMemoryState(),
+    },
+  );
+
+  assert.equal(response.headers.get('x-request-id'), 'request-fixture');
+  assert.equal(entries.length, 1);
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(entries[0]).filter(([key]) => key !== 'durationMs')),
+    {
+      event: 'http_request',
+      requestId: 'request-fixture',
+      method: 'GET',
+      path: '/api',
+      status: 200,
+      platform: 'bilibili',
+      cacheHit: null,
+      clientIpHash: entries[0].clientIpHash,
+    },
+  );
+  assert.equal(typeof entries[0].durationMs, 'number');
+  assert.match(entries[0].clientIpHash, /^[a-f0-9]{64}$/u);
+  const serialized = JSON.stringify(entries[0]);
+  assert.doesNotMatch(serialized, /super-secret|private-cookie|203\.0\.113\.20/u);
+  assert.equal(serialized.includes(SOURCE_URL), false);
+});
+
+test('proxy IP headers are trusted only when explicitly enabled', () => {
+  const headers = new Headers({
+    'X-Forwarded-For': '198.51.100.10, 10.0.0.2',
+    'X-Real-IP': '198.51.100.20',
+  });
+
+  assert.equal(getClientIp(headers, '10.0.0.1', false), '10.0.0.1');
+  assert.equal(getClientIp(headers, '10.0.0.1', true), '198.51.100.10');
+  assert.equal(getClientIp(new Headers(), '10.0.0.1', true), '10.0.0.1');
 });

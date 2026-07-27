@@ -1,6 +1,6 @@
 # Vrc2Link
 
-面向 VRChat 的 Bilibili、抖音、快手、YouTube 和网易云媒体链接服务。运行时零第三方依赖，需要 Node.js 18 或更高版本。
+面向 VRChat 的 Bilibili、抖音、快手、YouTube 和网易云媒体链接服务。运行时零第三方依赖，需要 Node.js 24 或更高版本（使用内置 SQLite）。
 
 ## 启动
 
@@ -23,6 +23,13 @@ BILIBILI_COOKIE=粘贴完整的 Bilibili Cookie 请求头
 NETEASE_COOKIE=粘贴完整的网易云 Cookie 请求头
 DOUYIN_COOKIE=粘贴完整的抖音 Cookie 请求头
 KUAISHOU_COOKIE=粘贴完整的快手 Cookie 请求头
+SQLITE_PATH=data/vrc2link.sqlite
+CACHE_TTL_SECONDS=300
+RATE_LIMIT_ANON_PER_MINUTE=10
+RATE_LIMIT_AUTH_PER_MINUTE=60
+RATE_LIMIT_IP_PER_MINUTE=120
+RATE_LIMIT_WINDOW_SECONDS=60
+TRUST_PROXY=false
 ```
 
 Cookie 不需要挑选字段。在已登录的平台页面打开开发者工具，进入 Network，刷新页面，选择一个同平台请求，在 Request Headers 中复制完整的 `Cookie` 值，然后直接粘贴到对应等号后面。
@@ -37,8 +44,21 @@ Cookie 不需要挑选字段。在已登录的平台页面打开开发者工具�
 | `NETEASE_COOKIE` | 网易云登录 Cookie |
 | `DOUYIN_COOKIE` | 抖音登录 Cookie |
 | `KUAISHOU_COOKIE` | 快手登录 Cookie |
+| `SQLITE_PATH` | SQLite 文件，默认 `data/vrc2link.sqlite` |
+| `CACHE_TTL_SECONDS` | 匿名解析缓存秒数，默认 `300` |
+| `RATE_LIMIT_ANON_PER_MINUTE` | 每个匿名客户端每窗口请求数，默认 `10` |
+| `RATE_LIMIT_AUTH_PER_MINUTE` | 每个 API key 每窗口请求数，默认 `60` |
+| `RATE_LIMIT_IP_PER_MINUTE` | 每个 IP 的总请求数，默认 `120` |
+| `RATE_LIMIT_WINDOW_SECONDS` | 限流窗口秒数，默认 `60` |
+| `TRUST_PROXY` | 是否信任代理 IP 请求头，默认 `false` |
 
 修改配置后需要重启服务。不传 `key` 时使用匿名解析；传入正确的 `key` 时才会使用服务器 Cookie；错误的 `key` 返回 `401`。
+
+## 缓存与限流
+
+匿名解析结果会写入 SQLite，服务重启后仍可复用；携带正确 `key` 的请求使用 Cookie，永不缓存。缓存键只保存链接与画质的 SHA-256，不保存 API key。缓存命中状态通过 `X-Cache: HIT` 或 `MISS` 返回。
+
+超过匿名、鉴权或 IP 任一额度时返回 `429` 和稳定错误码 `rate_limited`。响应包含 `Retry-After`、`X-RateLimit-Limit`、`X-RateLimit-Remaining`、`X-RateLimit-Reset`。
 
 ## `GET /api`
 
@@ -89,6 +109,10 @@ Bilibili 的 1080p、4K、8K 通常是 DASH 音视频分离流，而 `/play` 只
 ## 安全
 
 生产环境必须使用 HTTPS。VRChat 只能通过 URL 传递 `key`，因此不要公开分享含有 `key` 的播放链接，也不要提交或分享 `config.env`。
+
+每个响应都有 `X-Request-Id`。服务日志为单行 JSON，只记录方法、路径、状态、平台、缓存命中、耗时和客户端 IP 哈希，不记录查询串、Cookie、完整 API key 或原始 IP。
+
+直接对公网监听时保持 `TRUST_PROXY=false`。只有服务位于可信 Nginx、Caddy 或 CDN 后方，并且源站端口不对公网开放时才设置为 `true`；此时限流会读取 `X-Forwarded-For` 或 `X-Real-IP`。
 
 ## PM2
 

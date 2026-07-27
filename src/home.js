@@ -356,6 +356,7 @@ const HOME_HTML = `<!doctype html>
         <a href="#request">请求生成器</a>
         <a href="#endpoints">接口</a>
         <a href="#auth">鉴权</a>
+        <a href="#runtime">运行状态</a>
         <span class="status">服务在线</span>
       </nav>
     </div>
@@ -503,6 +504,35 @@ KUAISHOU_COOKIE=完整的快手 Cookie 请求头</code></pre>
       </div>
     </section>
 
+    <section id="runtime">
+      <div class="section-heading">
+        <h2>缓存、限流与日志</h2>
+        <p>生产运行状态保存在本机 SQLite，不需要额外部署 Redis。</p>
+      </div>
+      <div class="note-grid">
+        <div>
+          <h3>匿名缓存</h3>
+          <p>匿名解析默认缓存 300 秒，重启后仍然有效；鉴权请求不会缓存。响应头 <code>X-Cache</code> 表示是否命中。</p>
+        </div>
+        <div>
+          <h3>请求限额</h3>
+          <p>匿名默认 10 次/分钟，鉴权默认 60 次/分钟，每个 IP 总计 120 次/分钟。超额返回 <code>429 rate_limited</code> 和 <code>Retry-After</code>。</p>
+        </div>
+      </div>
+      <div class="config-guide">
+        <div>
+          <h3>请求追踪</h3>
+          <p>每个响应包含 <code>X-Request-Id</code>。服务输出单行 JSON 日志，不记录 Cookie、完整 API key、查询串或原始 IP。</p>
+        </div>
+        <pre><code>SQLITE_PATH=data/vrc2link.sqlite
+CACHE_TTL_SECONDS=300
+RATE_LIMIT_ANON_PER_MINUTE=10
+RATE_LIMIT_AUTH_PER_MINUTE=60
+RATE_LIMIT_IP_PER_MINUTE=120
+TRUST_PROXY=false</code></pre>
+      </div>
+    </section>
+
     <section id="errors">
       <div class="section-heading">
         <h2>常见状态码</h2>
@@ -512,6 +542,7 @@ KUAISHOU_COOKIE=完整的快手 Cookie 请求头</code></pre>
         <div class="error-item"><strong>400</strong><span>地址缺失或无法识别</span></div>
         <div class="error-item"><strong>401</strong><span>访问密钥错误</span></div>
         <div class="error-item"><strong>422</strong><span>指定画质不可用</span></div>
+        <div class="error-item"><strong>429</strong><span>请求频率超过限额</span></div>
         <div class="error-item"><strong>502</strong><span>平台接口解析失败</span></div>
       </div>
     </section>
