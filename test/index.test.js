@@ -99,6 +99,11 @@ test('only the new API endpoints are exposed', async () => {
   assert.deepEqual(detect('https://music.163.com/#/mv?id=10970707'), ['', '360p', '480p', '720p', '1080p']);
   assert.deepEqual(detect('https://v.douyin.com/abc123'), ['', 'original']);
   assert.match(controls['platform-hint'].textContent, /抖音视频/);
+  assert.deepEqual(
+    detect('3.51 M@J.Vl 05/03 :9pm pDu:/ 我也要跳 # MMD # vrchat https://v.douyin.com/A7VeP3Y8yfc/ 复制此链接，打开Dou音搜索'),
+    ['', 'original'],
+  );
+  assert.match(controls['platform-hint'].textContent, /抖音视频/);
   assert.deepEqual(detect('https://v.kuaishou.com/abc123'), ['', 'original']);
   assert.match(controls['platform-hint'].textContent, /快手视频/);
 

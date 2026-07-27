@@ -40,3 +40,13 @@ test('recognises Douyin and Kuaishou video links', () => {
   assert.deepEqual(extractId('https://v.douyin.com/abc123', 'douyin'), { type: 'video', id: 'abc123' });
   assert.deepEqual(extractId('https://v.kuaishou.com/abc123', 'kuaishou'), { type: 'video', id: 'abc123' });
 });
+
+test('normalizes a complete Douyin video share message', () => {
+  const shareText = '3.51 M@J.Vl 05/03 :9pm pDu:/ 我也要跳 # mooder # kipfel # MMD # vrchat # 二次元日常  https://v.douyin.com/A7VeP3Y8yfc/ 复制此链接，打开Dou音搜索，直接观看视频！';
+
+  const url = normalizeSourceUrl(shareText);
+
+  assert.equal(url, 'https://v.douyin.com/A7VeP3Y8yfc/');
+  assert.equal(identifyPlatform(url), 'douyin');
+  assert.deepEqual(extractId(url, 'douyin'), { type: 'video', id: 'A7VeP3Y8yfc' });
+});
