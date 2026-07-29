@@ -35,6 +35,10 @@ test('only the new API endpoints are exposed', async () => {
   assert.match(html, /id="paste-media"/);
   assert.match(html, /<code>\/api<\/code>/);
   assert.match(html, /<code>\/play<\/code>/);
+  assert.match(html, /Bilibili CC 字幕/);
+  assert.match(html, /id="mode-subtitle"/);
+  assert.match(html, /id="session-option"/);
+  assert.match(html, /先从同一 VRC 客户端请求/);
   assert.match(html, /DASH 音视频分离流/);
   assert.match(html, /为什么 1080p 会返回 422/);
   assert.match(html, /生产运行状态保存在本机 SQLite/);
@@ -66,6 +70,10 @@ test('only the new API endpoints are exposed', async () => {
     'media-url': createControl(),
     'api-key': createControl(),
     quality: createControl(),
+    'session-option-field': createControl(),
+    'session-option-label': createControl(),
+    'session-option': createControl(),
+    'session-option-help': createControl(),
     'quality-help': createControl(),
     'platform-hint': createControl(),
     'request-preview': createControl(),
@@ -115,6 +123,23 @@ test('only the new API endpoints are exposed', async () => {
   assert.match(controls['platform-hint'].textContent, /快手视频/);
   assert.deepEqual(detect('看看这个 https://youtu.be/dQw4w9WgXcQ?t=42 复制打开'), ['']);
   assert.match(controls['platform-hint'].textContent, /YouTube 视频/);
+
+  controls['request-builder'].elements.mode.value = 'subtitle';
+  controls['request-builder'].listeners.change();
+  assert.equal(controls['media-url'].disabled, true);
+  assert.equal(controls['session-option-field'].hidden, false);
+  assert.match(controls['request-preview'].textContent, /api\?subtitle=1&track=0/);
+  assert.equal(controls['session-option'].children.length, 17);
+  controls['session-option'].value = '3';
+  controls['request-builder'].listeners.change();
+  assert.match(controls['request-preview'].textContent, /api\?subtitle=1&track=3/);
+
+  controls['request-builder'].elements.mode.value = 'danmaku';
+  controls['request-builder'].listeners.change();
+  assert.match(controls['request-preview'].textContent, /api\?danmaku=1&segment=1/);
+
+  controls['request-builder'].elements.mode.value = 'play';
+  controls['request-builder'].listeners.change();
 
   await controls['paste-media'].listeners.click();
   assert.equal(controls['media-url'].value, pastedText);
