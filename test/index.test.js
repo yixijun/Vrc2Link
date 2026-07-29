@@ -139,6 +139,10 @@ test('only the new API endpoints are exposed', async () => {
   controls['request-builder'].elements.mode.value = 'danmaku';
   controls['request-builder'].listeners.change();
   assert.match(controls['request-preview'].textContent, /api\?danmaku=1&segment=1/);
+  assert.equal(controls['session-option'].children.length, 241);
+  assert.equal(controls['session-option'].children[0].value, 'segment=1');
+  assert.equal(controls['session-option'].children[239].value, 'segment=240');
+  assert.equal(controls['session-option'].children[240].value, 'live=1');
 
   controls['request-builder'].elements.mode.value = 'play';
   controls['request-builder'].listeners.change();

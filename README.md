@@ -44,6 +44,7 @@ Cookie 不需要挑选字段。在已登录的平台页面打开开发者工具�
 
 ```text
 /api?danmaku=1&segment=1
+/api?danmaku=1&segment=1&compact=1
 /api?danmaku=1&live=1
 /api?url=<媒体地址>&danmaku=1&segment=1
 ```

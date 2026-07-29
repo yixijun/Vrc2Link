@@ -73,6 +73,52 @@ test('/play binds the current media and /danmaku/current uses that session', asy
   assert.equal(combined.danmaku.messages[0].text, 'hello');
 });
 
+test('compact video danmaku uses arrays and samples the complete segment', async () => {
+  const state = createMemoryState();
+  const messages = Array.from({ length: 300 }, (_, index) => ({
+    id: String(index + 1),
+    time: index * 1.2,
+    text: `message-${index + 1}`,
+    color: 0xff0000 + index,
+  }));
+  const dependencies = {
+    state,
+    clientIp: '203.0.113.19',
+    resolve: async () => MEDIA,
+    fetchDanmaku: async () => ({
+      platform: 'bilibili',
+      mode: 'video',
+      segment: 1,
+      segmentSeconds: 360,
+      messages,
+    }),
+  };
+
+  await handleRequest(new Request(
+    `http://localhost/play?url=${encodeURIComponent(SOURCE_URL)}`,
+  ), dependencies);
+
+  const response = await handleRequest(
+    new Request('http://localhost/api?danmaku=1&segment=1&compact=1'),
+    dependencies,
+  );
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.compact, true);
+  assert.equal(body.messages.length, 120);
+  assert.deepEqual(body.messages[0], [0, 'message-1', 0xff0000]);
+  assert.deepEqual(body.messages.at(-1), [358.8, 'message-300', 0xff0000 + 299]);
+
+  const normal = await handleRequest(
+    new Request('http://localhost/api?danmaku=1&segment=1'),
+    dependencies,
+  );
+  const normalBody = await normal.json();
+  assert.equal(normalBody.compact, undefined);
+  assert.equal(normalBody.messages.length, 300);
+  assert.deepEqual(normalBody.messages[0], messages[0]);
+});
+
 test('/danmaku/current rejects clients without a recent /play request', async () => {
   const response = await handleRequest(
     new Request('http://localhost/danmaku/current?live=1'),

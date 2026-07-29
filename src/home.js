@@ -876,7 +876,11 @@ TRUST_PROXY=false</code></pre>
       } else if (mode === 'danmaku') {
         sessionOptionLabel.textContent = '弹幕范围';
         sessionOptionHelp.textContent = '视频分段每段 6 分钟；直播模式返回当前直播间最新弹幕。';
-        const choices = [['segment=1', '视频第 1 段'], ['live=1', 'Bilibili 直播']];
+        const choices = Array.from({ length: 240 }, function (_, index) {
+          const segment = index + 1;
+          return ['segment=' + segment, '视频第 ' + segment + ' 段'];
+        });
+        choices.push(['live=1', 'Bilibili 直播']);
         sessionOption.replaceChildren(...choices.map(function (item) {
           const option = document.createElement('option');
           option.value = item[0];

@@ -216,11 +216,36 @@ async function loadDanmakuForSession(url, session, dependencies, identityOverrid
     throw new AppError(400, 'invalid_segment', 'segment must be an integer from 1 to 240');
   }
   const loadDanmaku = dependencies.fetchDanmaku || fetchCurrentDanmaku;
-  return loadDanmaku(session, { segment, live }, {
+  const result = await loadDanmaku(session, { segment, live }, {
     env,
     state,
     clientIdentity: identity,
   });
+  return url.searchParams.get('compact') === '1' && !live
+    ? compactVideoDanmaku(result)
+    : result;
+}
+
+function compactVideoDanmaku(result) {
+  const messages = Array.isArray(result.messages) ? result.messages : [];
+  const limit = 120;
+  const selected = messages.length <= limit
+    ? messages
+    : Array.from({ length: limit }, (_, index) => (
+      messages[Math.round(index * (messages.length - 1) / (limit - 1))]
+    ));
+  return {
+    platform: result.platform,
+    mode: result.mode,
+    segment: result.segment,
+    segmentSeconds: result.segmentSeconds,
+    compact: true,
+    messages: selected.map((message) => [
+      Number(message.time) || 0,
+      String(message.text || ''),
+      Number.isFinite(Number(message.color)) ? Number(message.color) : 0xffffff,
+    ]),
+  };
 }
 
 function isCurrentDanmakuApi(url) {
