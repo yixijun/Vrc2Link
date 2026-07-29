@@ -59,6 +59,31 @@ DANMAKU_MAX_LIVE_MESSAGES=30
 
 抖音直播弹幕不在本次范围内；原有抖音短视频解析不受影响。Unity 安装步骤见 `Unity/Assets/Vrc2LinkDanmaku/README.md`。
 
+## Bilibili CC 字幕
+
+`/play` 成功后，可通过固定接口读取当前 Bilibili 视频的 CC 字幕。`track=0` 会自动优先简体中文；接口响应中的 `tracks` 可用于列出并选择其他语言轨道。没有 CC 字幕、当前媒体不是 Bilibili 视频或正在播放直播时，会返回 `available: false` 和空 `cues`，不会影响视频播放。
+
+```text
+/api?subtitle=1&track=0
+/subtitle/current?track=0
+```
+
+字幕响应示例：
+
+```json
+{
+  "available": true,
+  "source": "bilibili-cc",
+  "language": "zh-CN",
+  "languageName": "中文",
+  "selectedTrack": 0,
+  "tracks": [{ "index": 0, "language": "zh-CN", "name": "中文" }],
+  "cues": [{ "from": 1.2, "to": 3.4, "text": "字幕内容" }]
+}
+```
+
+已经烧录进画面的硬字幕会直接随视频显示。MP4/MKV 容器内的软字幕轨道无法由 VRChat 视频后端直接读取，需要解析服务在服务端提取或烧录后才能支持。
+
 | 环境变量 | 用途 |
 | --- | --- |
 | `PORT` | HTTP 端口，默认 `7890` |
