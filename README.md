@@ -10,9 +10,9 @@ notepad config.env
 npm start
 ```
 
-默认监听 `http://localhost:7890`。浏览器打开根路径即可查看 Web 使用说明，并通过请求生成器创建解析、播放、当前弹幕或当前字幕链接。
+默认监听 `http://localhost:7890`。浏览器打开根路径即可查看 Web 使用说明，并通过请求生成器创建 `/api` 或 `/play` 链接。
 
-请求生成器会根据粘贴的链接自动识别 Bilibili 视频/直播、抖音/快手视频、YouTube 视频、网易云歌曲/MV，并只显示对应画质选项。Bilibili 视频也可直接输入 `av170001`、标准 AV 链接或包含 AV 号的分享文本，服务端会转换为对应 BV 号供播放、弹幕和字幕使用。当前弹幕和当前字幕模式用于读取同一客户端最近一次 `/play` 绑定的媒体；字幕模式可选择自动或第 1–16 条 CC 轨道。YouTube 不解析媒体流，`/play` 直接 302 到原链接并交给 VRChat 处理。
+请求生成器会根据粘贴的链接自动识别 Bilibili 视频/直播、抖音/快手视频、YouTube 视频、网易云歌曲/MV，并只显示对应选项。YouTube 不解析媒体流，`/play` 直接 302 到原链接并交给 VRChat 处理。
 
 `config.env` 使用一行一个配置的格式：
 
@@ -44,7 +44,6 @@ Cookie 不需要挑选字段。在已登录的平台页面打开开发者工具�
 
 ```text
 /api?danmaku=1&segment=1
-/api?danmaku=1&segment=1&compact=1
 /api?danmaku=1&live=1
 /api?url=<媒体地址>&danmaku=1&segment=1
 ```
@@ -59,31 +58,6 @@ DANMAKU_MAX_LIVE_MESSAGES=30
 ```
 
 抖音直播弹幕不在本次范围内；原有抖音短视频解析不受影响。Unity 安装步骤见 `Unity/Assets/Vrc2LinkDanmaku/README.md`。
-
-## Bilibili CC 字幕
-
-`/play` 成功后，可通过固定接口读取当前 Bilibili 视频的 CC 字幕。`track=0` 会自动优先简体中文；接口响应中的 `tracks` 可用于列出并选择其他语言轨道，并区分人工字幕与 AI 字幕。Bilibili 经常对匿名播放器接口隐藏 CC 轨道，因此字幕接口会在服务器内部使用已配置的 `BILIBILI_COOKIE` 读取字幕元数据；Cookie 不会返回客户端，也不会用于提高媒体解析画质。没有 CC 字幕、当前媒体不是 Bilibili 视频或正在播放直播时，会返回 `available: false` 和空 `cues`，不会影响视频播放。
-
-```text
-/api?subtitle=1&track=0
-/subtitle/current?track=0
-```
-
-字幕响应示例：
-
-```json
-{
-  "available": true,
-  "source": "bilibili-cc",
-  "language": "zh-CN",
-  "languageName": "中文",
-  "selectedTrack": 0,
-  "tracks": [{ "index": 0, "language": "zh-CN", "name": "中文" }],
-  "cues": [{ "from": 1.2, "to": 3.4, "text": "字幕内容" }]
-}
-```
-
-已经烧录进画面的硬字幕会直接随视频显示。MP4/MKV 容器内的软字幕轨道无法由 VRChat 视频后端直接读取，需要解析服务在服务端提取或烧录后才能支持。
 
 | 环境变量 | 用途 |
 | --- | --- |

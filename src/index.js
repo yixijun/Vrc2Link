@@ -5,7 +5,6 @@ import { fetchCurrentDanmaku } from './danmaku.js';
 import { homePage } from './home.js';
 import { enforceDanmakuRateLimit, enforceRateLimits, hashIdentity } from './rate-limit.js';
 import { resolveMedia, selectPlayableStream } from './resolver.js';
-import { fetchCurrentSubtitle } from './subtitle.js';
 import { identifyPlatform, normalizeSourceUrl } from './utils/url.js';
 
 const CORS_HEADERS = {
@@ -65,9 +64,6 @@ async function dispatchRequest(request, dependencies, context) {
     if (url.pathname === '/') return withCommonHeaders(homePage());
     if (url.pathname === '/danmaku/current' || isCurrentDanmakuApi(url)) {
       return await handleDanmakuRequest(url, dependencies);
-    }
-    if (url.pathname === '/subtitle/current' || isCurrentSubtitleApi(url)) {
-      return await handleSubtitleRequest(url, dependencies);
     }
     if (url.pathname !== '/api' && url.pathname !== '/play') {
       throw new AppError(404, 'not_found', 'Endpoint not found');
@@ -178,32 +174,6 @@ async function handleDanmakuRequest(url, dependencies) {
   return jsonResponse(result, { headers: rateLimitHeaders });
 }
 
-async function handleSubtitleRequest(url, dependencies) {
-  const env = dependencies.env || process.env;
-  const state = dependencies.state;
-  if (!state) throw new AppError(503, 'state_unavailable', 'Subtitle state is unavailable');
-
-  const clientIp = dependencies.clientIp || 'unknown';
-  const rateLimitHeaders = enforceDanmakuRateLimit({ state, env, clientIp });
-  const session = state.getJson(`danmaku:session:${hashIdentity(clientIp)}`);
-  if (!session) {
-    throw new AppError(
-      409,
-      'no_subtitle_session',
-      'Play a supported URL through /play before requesting subtitles',
-    );
-  }
-
-  const loadSubtitle = dependencies.fetchSubtitle || fetchCurrentSubtitle;
-  const rawTrack = url.searchParams.get('track') || '0';
-  const track = Number.parseInt(rawTrack, 10);
-  if (!Number.isInteger(track) || track < 0 || track > 16) {
-    throw new AppError(400, 'invalid_subtitle_track', 'track must be an integer from 0 to 16');
-  }
-  const result = await loadSubtitle(session, { track }, { env, state });
-  return jsonResponse(result, { headers: rateLimitHeaders });
-}
-
 async function loadDanmakuForSession(url, session, dependencies, identityOverride) {
   const env = dependencies.env || process.env;
   const state = dependencies.state;
@@ -216,47 +186,16 @@ async function loadDanmakuForSession(url, session, dependencies, identityOverrid
     throw new AppError(400, 'invalid_segment', 'segment must be an integer from 1 to 240');
   }
   const loadDanmaku = dependencies.fetchDanmaku || fetchCurrentDanmaku;
-  const result = await loadDanmaku(session, { segment, live }, {
+  return loadDanmaku(session, { segment, live }, {
     env,
     state,
     clientIdentity: identity,
   });
-  return url.searchParams.get('compact') === '1' && !live
-    ? compactVideoDanmaku(result)
-    : result;
-}
-
-function compactVideoDanmaku(result) {
-  const messages = Array.isArray(result.messages) ? result.messages : [];
-  const limit = 120;
-  const selected = messages.length <= limit
-    ? messages
-    : Array.from({ length: limit }, (_, index) => (
-      messages[Math.round(index * (messages.length - 1) / (limit - 1))]
-    ));
-  return {
-    platform: result.platform,
-    mode: result.mode,
-    segment: result.segment,
-    segmentSeconds: result.segmentSeconds,
-    compact: true,
-    messages: selected.map((message) => [
-      Number(message.time) || 0,
-      String(message.text || ''),
-      Number.isFinite(Number(message.color)) ? Number(message.color) : 0xffffff,
-    ]),
-  };
 }
 
 function isCurrentDanmakuApi(url) {
   return url.pathname === '/api' &&
     url.searchParams.get('danmaku') === '1' &&
-    !url.searchParams.has('url');
-}
-
-function isCurrentSubtitleApi(url) {
-  return url.pathname === '/api' &&
-    url.searchParams.get('subtitle') === '1' &&
     !url.searchParams.has('url');
 }
 

@@ -8,22 +8,18 @@ import { bilibiliQuality, bilibiliQnForQuality } from '../utils/quality.js';
 
 // ---- Parse video ----
 
-export async function parseVideo(videoId, options = {}) {
+export async function parseVideo(bvid, options = {}) {
   const { cookie = '', quality: targetQuality } = options;
-  const avMatch = String(videoId).match(/^av(\d+)$/iu);
-  const viewQuery = avMatch ? { aid: avMatch[1] } : { bvid: videoId };
 
   // Step 1: get video info
   const viewResp = await fetchWithRetry(
-    `https://api.bilibili.com/x/web-interface/view?${new URLSearchParams(viewQuery)}`,
+    `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`,
     { platform: 'bilibili', cookie }
   );
   const vdata = (await viewResp.json())?.data;
-  if (!vdata) throw new Error(`Video not found: ${videoId}`);
+  if (!vdata) throw new Error(`Video not found: ${bvid}`);
 
   const { cid, title = '', pic: cover = '', duration = 0, pages = [] } = vdata;
-  const bvid = vdata.bvid || (avMatch ? '' : videoId);
-  if (!bvid) throw new Error(`Bilibili BV id not found for: ${videoId}`);
   const author = vdata.owner?.name || '';
 
   // PGC videos use a different player endpoint even when opened through a BV URL.

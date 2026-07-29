@@ -151,7 +151,7 @@ const HOME_HTML = `<!doctype html>
       color: var(--secondary);
       font-size: 15px;
     }
-    .route-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+    .route-summary { display: flex; align-items: center; gap: 8px; }
     .route-row {
       min-width: 116px;
       padding: 8px 10px;
@@ -279,7 +279,7 @@ const HOME_HTML = `<!doctype html>
     legend { margin-bottom: 7px; }
     .segment {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: 1fr 1fr;
       padding: 3px;
       border-radius: 7px;
       background: rgba(118, 118, 128, 0.12);
@@ -304,7 +304,6 @@ const HOME_HTML = `<!doctype html>
     }
     .segment input:focus-visible + label { box-shadow: 0 0 0 3px var(--focus); }
     select:disabled { background: rgba(118, 118, 128, 0.08); color: var(--tertiary); cursor: not-allowed; }
-    [hidden] { display: none !important; }
 
     .request-preview {
       flex: 1;
@@ -440,7 +439,6 @@ const HOME_HTML = `<!doctype html>
       .note-grid, .config-guide { grid-template-columns: 1fr; gap: 22px; }
       .error-list { grid-template-columns: repeat(3, 1fr); }
       .error-item:nth-child(3) { border-right: 0; }
-      .segment { grid-template-columns: 1fr 1fr; }
     }
 
     @media (max-width: 520px) {
@@ -527,13 +525,11 @@ const HOME_HTML = `<!doctype html>
           <div>
             <p class="eyebrow">VRChat Media Resolver</p>
             <h1>Vrc2Link</h1>
-            <p class="lead">把平台链接转换成 VRChat 可用的播放地址，并读取当前 Bilibili 视频的弹幕与 CC 字幕。</p>
+            <p class="lead">把平台链接转换成 VRChat 可用的播放地址，或查看完整解析结果。</p>
           </div>
           <div class="route-summary" aria-label="接口摘要">
             <div class="route-row"><span class="method">GET</span><code>/api</code><span>详细解析结果</span></div>
             <div class="route-row"><span class="method">GET</span><code>/play</code><span>302 播放跳转</span></div>
-            <div class="route-row"><span class="method">GET</span><code>弹幕</code><span>当前视频弹幕</span></div>
-            <div class="route-row"><span class="method">GET</span><code>字幕</code><span>Bilibili CC 字幕</span></div>
           </div>
         </div>
 
@@ -541,9 +537,9 @@ const HOME_HTML = `<!doctype html>
           <div class="builder-form">
             <p class="panel-title">创建请求</p>
             <div class="field">
-              <label class="field-label" for="media-url">媒体链接、AV 号或分享文本</label>
+              <label class="field-label" for="media-url">媒体链接或分享文本</label>
               <div class="input-with-action">
-                <input id="media-url" name="url" type="text" inputmode="url" required placeholder="粘贴平台链接、Bilibili AV 号或分享文本" autocomplete="off" aria-describedby="platform-hint">
+                <input id="media-url" name="url" type="text" inputmode="url" required placeholder="粘贴 Bilibili、抖音、快手、YouTube 或网易云链接" autocomplete="off" aria-describedby="platform-hint">
                 <button class="paste-button" id="paste-media" type="button">粘贴</button>
               </div>
               <p class="platform-hint" id="platform-hint">等待识别媒体平台</p>
@@ -556,10 +552,6 @@ const HOME_HTML = `<!doctype html>
                 <label for="mode-api">详细解析</label>
                 <input id="mode-play" type="radio" name="mode" value="play">
                 <label for="mode-play">直接播放</label>
-                <input id="mode-danmaku" type="radio" name="mode" value="danmaku">
-                <label for="mode-danmaku">当前弹幕</label>
-                <input id="mode-subtitle" type="radio" name="mode" value="subtitle">
-                <label for="mode-subtitle">当前字幕</label>
               </div>
             </fieldset>
 
@@ -574,12 +566,6 @@ const HOME_HTML = `<!doctype html>
                 <option value="">自动选择</option>
               </select>
               <p class="field-help" id="quality-help">识别媒体平台后显示对应的画质或音质。</p>
-            </div>
-
-            <div class="field" id="session-option-field" hidden>
-              <label class="field-label" id="session-option-label" for="session-option">选项</label>
-              <select id="session-option"></select>
-              <p class="field-help" id="session-option-help"></p>
             </div>
           </div>
 
@@ -599,7 +585,7 @@ const HOME_HTML = `<!doctype html>
       <div class="section-inner">
         <div class="section-heading">
           <h2>接口</h2>
-          <p>媒体地址通过 URL 编码后的 <code>url</code> 参数传入。支持完整平台链接、Bilibili AV 号和分享文本。</p>
+          <p>媒体地址通过 URL 编码后的 <code>url</code> 参数传入。支持完整平台链接和包含链接的分享文本。</p>
         </div>
 
         <article class="endpoint">
@@ -622,49 +608,6 @@ const HOME_HTML = `<!doctype html>
               1080p、4K、8K 通常只提供 DASH 音视频分离流。Cookie 能解锁账号画质权限，但不会把两条轨道转换成带声音的单文件。
             </div>
             <pre><code>GET /api?url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV...</code></pre>
-          </div>
-        </article>
-
-        <article class="endpoint">
-          <div>
-            <span class="tag">GET</span>
-            <h3><code>/api?danmaku=1</code></h3>
-            <p>当前媒体弹幕</p>
-          </div>
-          <div class="endpoint-copy">
-            <p>读取同一客户端最近通过 <code>/play</code> 播放的 Bilibili 媒体。普通视频按 6 分钟分段，直播读取最新弹幕。</p>
-            <table>
-              <thead><tr><th>参数</th><th>必填</th><th>说明</th></tr></thead>
-              <tbody>
-                <tr><td><code>segment</code></td><td>视频必填</td><td>从 1 开始的 6 分钟弹幕分段</td></tr>
-                <tr><td><code>live=1</code></td><td>直播必填</td><td>读取当前直播间的最新弹幕</td></tr>
-              </tbody>
-            </table>
-            <pre><code>GET /api?danmaku=1&amp;segment=1
-GET /api?danmaku=1&amp;live=1</code></pre>
-          </div>
-        </article>
-
-        <article class="endpoint">
-          <div>
-            <span class="tag">GET</span>
-            <h3><code>/api?subtitle=1</code></h3>
-            <p>Bilibili CC 字幕</p>
-          </div>
-          <div class="endpoint-copy">
-            <p>返回当前 Bilibili 视频的字幕轨道和时间轴。<code>track=0</code> 自动优先简体中文；根据响应中的 <code>tracks</code> 可切换人工、AI 或其他语言轨道。</p>
-            <table>
-              <thead><tr><th>参数</th><th>必填</th><th>说明</th></tr></thead>
-              <tbody>
-                <tr><td><code>track</code></td><td>否</td><td><code>0</code> 自动选择，<code>1–16</code> 选择具体字幕轨道</td></tr>
-              </tbody>
-            </table>
-            <div class="compat-note">
-              <strong>正确调用顺序</strong>
-              先从同一 VRC 客户端请求 <code>/play?url=...</code>，再请求字幕接口。服务端通过客户端会话确定当前视频；没有 CC 时返回 <code>available: false</code>。
-            </div>
-            <pre><code>1. GET /play?url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV...
-2. GET /api?subtitle=1&amp;track=0</code></pre>
           </div>
         </article>
 
@@ -784,16 +727,11 @@ TRUST_PROXY=false</code></pre>
     const apiKey = document.getElementById('api-key');
     const quality = document.getElementById('quality');
     const qualityHelp = document.getElementById('quality-help');
-    const sessionOptionField = document.getElementById('session-option-field');
-    const sessionOptionLabel = document.getElementById('session-option-label');
-    const sessionOption = document.getElementById('session-option');
-    const sessionOptionHelp = document.getElementById('session-option-help');
     const platformHint = document.getElementById('platform-hint');
     const preview = document.getElementById('request-preview');
     const pasteButton = document.getElementById('paste-media');
     const copyButton = document.getElementById('copy-request');
     let currentMediaKind = '';
-    let currentSessionMode = '';
 
     const mediaKinds = {
       bilibiliVideo: {
@@ -854,43 +792,6 @@ TRUST_PROXY=false</code></pre>
       return form.elements.mode.value;
     }
 
-    function isSessionMode() {
-      return selectedMode() === 'danmaku' || selectedMode() === 'subtitle';
-    }
-
-    function updateSessionOptions() {
-      const mode = selectedMode();
-      sessionOptionField.hidden = !isSessionMode();
-      if (mode === currentSessionMode) return;
-      currentSessionMode = mode;
-      if (mode === 'subtitle') {
-        sessionOptionLabel.textContent = '字幕轨道';
-        sessionOptionHelp.textContent = '自动模式优先简体中文；实际语言列表由第一次字幕响应返回。';
-        sessionOption.replaceChildren(...Array.from({ length: 17 }, function (_, index) {
-          const option = document.createElement('option');
-          option.value = String(index);
-          option.textContent = index === 0 ? '自动选择（优先简体中文）' : '字幕轨道 ' + index;
-          return option;
-        }));
-        sessionOption.value = '0';
-      } else if (mode === 'danmaku') {
-        sessionOptionLabel.textContent = '弹幕范围';
-        sessionOptionHelp.textContent = '视频分段每段 6 分钟；直播模式返回当前直播间最新弹幕。';
-        const choices = Array.from({ length: 240 }, function (_, index) {
-          const segment = index + 1;
-          return ['segment=' + segment, '视频第 ' + segment + ' 段'];
-        });
-        choices.push(['live=1', 'Bilibili 直播']);
-        sessionOption.replaceChildren(...choices.map(function (item) {
-          const option = document.createElement('option');
-          option.value = item[0];
-          option.textContent = item[1];
-          return option;
-        }));
-        sessionOption.value = 'segment=1';
-      }
-    }
-
     function extractUrl(input) {
       const lower = input.toLowerCase();
       const http = lower.indexOf('http://');
@@ -911,9 +812,7 @@ TRUST_PROXY=false</code></pre>
     }
 
     function detectMedia(input) {
-      const trimmed = input.trim();
-      if (/(?:^|[^a-zA-Z0-9])av\\d+(?![a-zA-Z0-9])/i.test(trimmed)) return 'bilibiliVideo';
-      const candidate = extractUrl(trimmed);
+      const candidate = extractUrl(input.trim());
       if (!candidate) return '';
 
       try {
@@ -967,32 +866,17 @@ TRUST_PROXY=false</code></pre>
     }
 
     function buildRequestUrl() {
-      const mode = selectedMode();
-      if (!isSessionMode() && !mediaUrl.value.trim()) return '';
-      const request = new URL(mode === 'api' || mode === 'play' ? '/' + mode : '/api', window.location.origin);
-      if (!isSessionMode()) request.searchParams.set('url', mediaUrl.value.trim());
+      if (!mediaUrl.value.trim()) return '';
+      const request = new URL('/' + selectedMode(), window.location.origin);
+      request.searchParams.set('url', mediaUrl.value.trim());
       if (apiKey.value) request.searchParams.set('key', apiKey.value);
-      if (mode === 'play' && quality.value) request.searchParams.set('quality', quality.value);
-      if (mode === 'subtitle') {
-        request.searchParams.set('subtitle', '1');
-        request.searchParams.set('track', sessionOption.value || '0');
-      } else if (mode === 'danmaku') {
-        request.searchParams.set('danmaku', '1');
-        const option = sessionOption.value || 'segment=1';
-        const separator = option.indexOf('=');
-        request.searchParams.set(option.slice(0, separator), option.slice(separator + 1));
-      }
+      if (selectedMode() === 'play' && quality.value) request.searchParams.set('quality', quality.value);
       return request.href;
     }
 
     function updatePreview() {
       updateMediaOptions();
-      updateSessionOptions();
-      const sessionMode = isSessionMode();
-      mediaUrl.required = !sessionMode;
-      mediaUrl.disabled = sessionMode;
       quality.disabled = selectedMode() !== 'play';
-      apiKey.disabled = sessionMode;
       const requestUrl = buildRequestUrl();
       preview.textContent = requestUrl || '等待输入媒体链接';
     }
