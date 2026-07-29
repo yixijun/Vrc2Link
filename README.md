@@ -61,7 +61,7 @@ DANMAKU_MAX_LIVE_MESSAGES=30
 
 ## Bilibili CC 字幕
 
-`/play` 成功后，可通过固定接口读取当前 Bilibili 视频的 CC 字幕。`track=0` 会自动优先简体中文；接口响应中的 `tracks` 可用于列出并选择其他语言轨道。没有 CC 字幕、当前媒体不是 Bilibili 视频或正在播放直播时，会返回 `available: false` 和空 `cues`，不会影响视频播放。
+`/play` 成功后，可通过固定接口读取当前 Bilibili 视频的 CC 字幕。`track=0` 会自动优先简体中文；接口响应中的 `tracks` 可用于列出并选择其他语言轨道，并区分人工字幕与 AI 字幕。Bilibili 经常对匿名播放器接口隐藏 CC 轨道，因此字幕接口会在服务器内部使用已配置的 `BILIBILI_COOKIE` 读取字幕元数据；Cookie 不会返回客户端，也不会用于提高媒体解析画质。没有 CC 字幕、当前媒体不是 Bilibili 视频或正在播放直播时，会返回 `available: false` 和空 `cues`，不会影响视频播放。
 
 ```text
 /api?subtitle=1&track=0

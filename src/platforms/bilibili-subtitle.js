@@ -17,18 +17,29 @@ export async function fetchBilibiliCcSubtitles(bvid, options = {}) {
   const aid = video?.data?.aid;
   if (!cid) throw new Error(`Bilibili video CID not found: ${bvid}`);
 
+  const expectedSubtitleIds = new Set(
+    (video?.data?.subtitle?.list || [])
+      .map((item) => String(item?.id_str || item?.id || ''))
+      .filter(Boolean),
+  );
   const player = await fetchJson(
     fetcher,
-    `https://api.bilibili.com/x/player/v2?${new URLSearchParams({
+    `https://api.bilibili.com/x/player/wbi/v2?${new URLSearchParams({
       bvid: String(bvid),
       cid: String(cid),
       ...(aid ? { aid: String(aid) } : {}),
     })}`,
     cookie,
   );
-  const tracks = sortSubtitleTracks(player?.data?.subtitle?.subtitles || []);
+  const responseTracks = player?.data?.subtitle?.subtitles || [];
+  const consistentTracks = expectedSubtitleIds.size > 0
+    ? responseTracks.filter((item) => expectedSubtitleIds.has(String(item?.id_str || item?.id || '')))
+    : responseTracks;
+  const tracks = sortSubtitleTracks(consistentTracks);
+  const playableTracks = tracks.filter((item) => normalizeSubtitleUrl(item?.subtitle_url));
   const selectedIndex = track <= 0 ? 0 : track - 1;
-  const selectedTrack = tracks[selectedIndex] || tracks[0];
+  const requestedTrack = tracks[selectedIndex];
+  const selectedTrack = requestedTrack?.subtitle_url ? requestedTrack : playableTracks[0];
   if (!selectedTrack?.subtitle_url) {
     const result = unavailable(tracks);
     state?.setJson(cacheKey, result, CACHE_SECONDS);
@@ -101,8 +112,15 @@ function normalizeTracks(tracks) {
   return tracks.map((track, index) => ({
     index,
     language: String(track?.lan || ''),
-    name: String(track?.lan_doc || track?.lan || `Track ${index + 1}`),
+    name: subtitleTrackName(track, index),
   }));
+}
+
+function subtitleTrackName(track, index) {
+  const base = String(track?.lan_doc || track?.lan || `Track ${index + 1}`);
+  const language = String(track?.lan || '').toLowerCase();
+  const isAi = Number(track?.type) === 1 || language.startsWith('ai-');
+  return `${base}${isAi ? '（AI）' : '（人工）'}`;
 }
 
 function languageRank(language) {

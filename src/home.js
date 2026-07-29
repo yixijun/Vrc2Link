@@ -652,7 +652,7 @@ GET /api?danmaku=1&amp;live=1</code></pre>
             <p>Bilibili CC 字幕</p>
           </div>
           <div class="endpoint-copy">
-            <p>返回当前 Bilibili 视频的字幕轨道和时间轴。<code>track=0</code> 自动优先简体中文；根据响应中的 <code>tracks</code> 可切换其他语言。</p>
+            <p>返回当前 Bilibili 视频的字幕轨道和时间轴。<code>track=0</code> 自动优先简体中文；根据响应中的 <code>tracks</code> 可切换人工、AI 或其他语言轨道。</p>
             <table>
               <thead><tr><th>参数</th><th>必填</th><th>说明</th></tr></thead>
               <tbody>

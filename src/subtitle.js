@@ -6,9 +6,12 @@ export async function fetchCurrentSubtitle(session, query = {}, options = {}) {
   }
 
   return fetchBilibiliCcSubtitles(session.id, {
-    cookie: session.authenticated ? options.env?.BILIBILI_COOKIE || '' : '',
+    // Bilibili hides many public-video CC tracks from anonymous player APIs
+    // responses. The Cookie stays server-side and is only used to read CC data.
+    cookie: options.env?.BILIBILI_COOKIE || '',
     state: options.state,
     track: query.track,
+    fetcher: options.fetcher,
   });
 }
 
