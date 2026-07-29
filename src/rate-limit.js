@@ -32,6 +32,17 @@ export function hashIdentity(value) {
   return createHash('sha256').update(String(value || 'unknown')).digest('hex');
 }
 
+export function enforceDanmakuRateLimit({ state, env, clientIp }) {
+  const quota = consumeQuota(
+    state,
+    `rate:danmaku:${hashIdentity(clientIp)}`,
+    positiveInteger(env.DANMAKU_RATE_LIMIT_PER_MINUTE, 90),
+    positiveInteger(env.RATE_LIMIT_WINDOW_SECONDS, 60),
+  );
+  if (quota.rejected) throw rateLimitError(quota);
+  return quotaHeaders(quota);
+}
+
 function consumeQuota(state, key, limit, windowSeconds) {
   const counter = state.increment(key, windowSeconds);
   return {

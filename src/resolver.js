@@ -133,6 +133,7 @@ function normalizeResult(result, authenticated) {
 
   if (meta.album) normalized.album = meta.album;
   if (meta.liveStatus != null) normalized.liveStatus = meta.liveStatus;
+  if (meta.webRid) normalized.webRid = String(meta.webRid);
   if (meta.shortId) normalized.shortId = String(meta.shortId);
   if (meta.pages?.length) {
     normalized.parts = meta.pages.map((part) => ({

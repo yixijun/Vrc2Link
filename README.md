@@ -36,6 +36,29 @@ Cookie 不需要挑选字段。在已登录的平台页面打开开发者工具�
 
 `config.env` 已被 Git 忽略。也可以使用同名环境变量，环境变量会优先于配置文件：
 
+## Bilibili 弹幕
+
+`/play` 成功后，服务器会按客户端记录当前媒体；Unity 弹幕层通过固定的 `/api?danmaku=1` 地址读取数据，不需要在 Udon 运行时拼接 `VRCUrl`。Bilibili 普通视频按 6 分钟分段读取历史弹幕，Bilibili 直播读取最近弹幕并去重。旧的 `/danmaku/current` 地址仍保留兼容。
+
+示例：
+
+```text
+/api?danmaku=1&segment=1
+/api?danmaku=1&live=1
+/api?url=<媒体地址>&danmaku=1&segment=1
+```
+
+需要在生产 `config.env` 增加：
+
+```dotenv
+DANMAKU_RATE_LIMIT_PER_MINUTE=90
+DANMAKU_SESSION_TTL_SECONDS=21600
+DANMAKU_MAX_VIDEO_MESSAGES=300
+DANMAKU_MAX_LIVE_MESSAGES=30
+```
+
+抖音直播弹幕不在本次范围内；原有抖音短视频解析不受影响。Unity 安装步骤见 `Unity/Assets/Vrc2LinkDanmaku/README.md`。
+
 | 环境变量 | 用途 |
 | --- | --- |
 | `PORT` | HTTP 端口，默认 `7890` |

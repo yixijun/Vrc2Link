@@ -1,8 +1,9 @@
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 
 import { AppError } from './errors.js';
+import { fetchCurrentDanmaku } from './danmaku.js';
 import { homePage } from './home.js';
-import { enforceRateLimits, hashIdentity } from './rate-limit.js';
+import { enforceDanmakuRateLimit, enforceRateLimits, hashIdentity } from './rate-limit.js';
 import { resolveMedia, selectPlayableStream } from './resolver.js';
 import { identifyPlatform, normalizeSourceUrl } from './utils/url.js';
 
@@ -61,6 +62,9 @@ async function dispatchRequest(request, dependencies, context) {
   let rateLimitHeaders = {};
   try {
     if (url.pathname === '/') return withCommonHeaders(homePage());
+    if (url.pathname === '/danmaku/current' || isCurrentDanmakuApi(url)) {
+      return await handleDanmakuRequest(url, dependencies);
+    }
     if (url.pathname !== '/api' && url.pathname !== '/play') {
       throw new AppError(404, 'not_found', 'Endpoint not found');
     }
@@ -97,6 +101,22 @@ async function dispatchRequest(request, dependencies, context) {
     context.platform = result.platform || null;
 
     if (url.pathname === '/api') {
+      if (url.searchParams.get('danmaku') === '1') {
+        bindDanmakuSession({
+          state,
+          env,
+          clientIp: dependencies.clientIp || 'unknown',
+          rawUrl,
+          result,
+        });
+        const danmaku = await loadDanmakuForSession(url, result, dependencies);
+        return jsonResponse({ ...result, danmaku }, {
+          headers: {
+            ...rateLimitHeaders,
+            ...(cacheKey ? { 'X-Cache': cacheHit ? 'HIT' : 'MISS' } : {}),
+          },
+        });
+      }
       return jsonResponse(result, {
         headers: {
           ...rateLimitHeaders,
@@ -106,6 +126,13 @@ async function dispatchRequest(request, dependencies, context) {
     }
 
     const stream = selectPlayableStream(result, quality);
+    bindDanmakuSession({
+      state,
+      env,
+      clientIp: dependencies.clientIp || 'unknown',
+      rawUrl,
+      result,
+    });
     return withCommonHeaders(new Response(null, {
       status: 302,
       headers: {
@@ -124,6 +151,65 @@ async function dispatchRequest(request, dependencies, context) {
     }
     return errorResponse(new AppError(500, 'internal_error', 'Internal server error'));
   }
+}
+
+async function handleDanmakuRequest(url, dependencies) {
+  const env = dependencies.env || process.env;
+  const state = dependencies.state;
+  if (!state) throw new AppError(503, 'state_unavailable', 'Danmaku state is unavailable');
+
+  const clientIp = dependencies.clientIp || 'unknown';
+  const rateLimitHeaders = enforceDanmakuRateLimit({ state, env, clientIp });
+  const identity = hashIdentity(clientIp);
+  const session = state.getJson(`danmaku:session:${identity}`);
+  if (!session) {
+    throw new AppError(
+      409,
+      'no_danmaku_session',
+      'Play a supported URL through /play before requesting danmaku',
+    );
+  }
+
+  const result = await loadDanmakuForSession(url, session, dependencies, identity);
+  return jsonResponse(result, { headers: rateLimitHeaders });
+}
+
+async function loadDanmakuForSession(url, session, dependencies, identityOverride) {
+  const env = dependencies.env || process.env;
+  const state = dependencies.state;
+  const clientIp = dependencies.clientIp || 'unknown';
+  const identity = identityOverride || hashIdentity(clientIp);
+  const live = url.searchParams.get('live') === '1';
+  const rawSegment = url.searchParams.get('segment') || '1';
+  const segment = Number.parseInt(rawSegment, 10);
+  if (!live && (!Number.isInteger(segment) || segment < 1 || segment > 240)) {
+    throw new AppError(400, 'invalid_segment', 'segment must be an integer from 1 to 240');
+  }
+  const loadDanmaku = dependencies.fetchDanmaku || fetchCurrentDanmaku;
+  return loadDanmaku(session, { segment, live }, {
+    env,
+    state,
+    clientIdentity: identity,
+  });
+}
+
+function isCurrentDanmakuApi(url) {
+  return url.pathname === '/api' &&
+    url.searchParams.get('danmaku') === '1' &&
+    !url.searchParams.has('url');
+}
+
+function bindDanmakuSession({ state, env, clientIp, rawUrl, result }) {
+  if (!state) return;
+  const sourceUrl = normalizeSourceUrl(rawUrl || '');
+  state.setJson(`danmaku:session:${hashIdentity(clientIp)}`, {
+    platform: result.platform,
+    type: result.type,
+    id: result.id,
+    webRid: result.webRid || '',
+    sourceUrl,
+    authenticated: result.authenticated === true,
+  }, positiveInteger(env.DANMAKU_SESSION_TTL_SECONDS, 21600));
 }
 
 function writeRequestLog(logger, entry) {
