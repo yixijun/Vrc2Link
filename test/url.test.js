@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { extractId, identifyPlatform, normalizeSourceUrl } from '../src/utils/url.js';
+import { expandShortLink, extractId, identifyPlatform, normalizeSourceUrl } from '../src/utils/url.js';
 
 test('extractId recognises hash-based Netease MV links', () => {
   const url = 'https://music.163.com/#/mv?id=5365570';
@@ -19,11 +19,44 @@ test('normalizeSourceUrl extracts a Bilibili URL from copied share text', () => 
   assert.deepEqual(extractId(url, 'bilibili'), { type: 'video', id: 'BV1W4PXzJEDy' });
 });
 
+test('normalizes a bare Bilibili AV number as a video URL', () => {
+  const url = normalizeSourceUrl('av170001');
+
+  assert.equal(url, 'https://www.bilibili.com/video/av170001');
+  assert.equal(identifyPlatform(url), 'bilibili');
+  assert.deepEqual(extractId(url, 'bilibili'), { type: 'video', id: 'av170001' });
+});
+
+test('extracts a Bilibili AV number from copied share text', () => {
+  const url = normalizeSourceUrl('经典视频 av170001，复制到浏览器打开');
+
+  assert.equal(url, 'https://www.bilibili.com/video/av170001');
+});
+
 test('normalizeSourceUrl removes copied prose after a short link', () => {
   assert.equal(
     normalizeSourceUrl('https://b23.tv/abcdef，复制到浏览器打开'),
     'https://b23.tv/abcdef',
   );
+});
+
+test('expands the requested b23.tv link and falls back to GET when HEAD is rejected', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const methods = [];
+  globalThis.fetch = async (_input, options) => {
+    methods.push(options.method);
+    if (options.method === 'HEAD') return new Response(null, { status: 405 });
+    return new Response(null, {
+      status: 302,
+      headers: { location: 'https://www.bilibili.com/video/BV1CfUfBoE7S' },
+    });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const result = await expandShortLink('https://b23.tv/iVI3uuC');
+
+  assert.equal(result, 'https://www.bilibili.com/video/BV1CfUfBoE7S');
+  assert.deepEqual(methods, ['HEAD', 'GET']);
 });
 
 test('recognises Douyin and Kuaishou video links', () => {

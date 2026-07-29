@@ -31,6 +31,9 @@ const PLATFORM_RULES = [
 ];
 const SHORT_LINK_CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_SHORT_LINK_CACHE_ENTRIES = 512;
+const SHORT_LINK_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+  '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 const shortLinkCache = new Map();
 
 /**
@@ -42,10 +45,20 @@ export function normalizeSourceUrl(input) {
   const text = String(input || '').trim();
   if (!text) return text;
 
+  const bareBilibiliAv = text.match(/^av(\d+)$/iu);
+  if (bareBilibiliAv) {
+    return `https://www.bilibili.com/video/av${bareBilibiliAv[1]}`;
+  }
+
   const candidates = text.match(/https?:\/\/[^\s<>"'，。；！？、）】,;\])]+/giu) || [];
   for (const rawCandidate of candidates) {
     const candidate = rawCandidate.replace(/[.!]+$/u, '');
     if (identifyPlatform(candidate)) return candidate;
+  }
+
+  const copiedBilibiliAv = text.match(/(?:^|[^a-zA-Z0-9])av(\d+)(?![a-zA-Z0-9])/iu);
+  if (copiedBilibiliAv) {
+    return `https://www.bilibili.com/video/av${copiedBilibiliAv[1]}`;
   }
   return text;
 }
@@ -116,18 +129,38 @@ export async function expandShortLink(urlStr, userAgent) {
 }
 
 async function requestShortLink(urlStr, userAgent) {
-  const resp = await fetch(urlStr, {
+  const headers = {
+    'User-Agent': userAgent || SHORT_LINK_USER_AGENT,
+    Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
+  };
+  let resp = await fetch(urlStr, {
     method: 'HEAD',
     redirect: 'manual',
-    headers: userAgent ? { 'User-Agent': userAgent } : undefined,
+    headers,
   });
 
-  if (resp.status >= 300 && resp.status < 400 && resp.headers.has('location')) {
-    const location = resp.headers.get('location');
-    return new URL(location, urlStr).href;
+  let expanded = redirectLocation(resp, urlStr);
+  if (expanded) return expanded;
+
+  // Some short-link gateways reject HEAD even though GET redirects normally.
+  if (!resp.ok) {
+    resp = await fetch(urlStr, {
+      method: 'GET',
+      redirect: 'manual',
+      headers,
+    });
+    expanded = redirectLocation(resp, urlStr);
+    if (expanded) return expanded;
   }
 
   return urlStr;
+}
+
+function redirectLocation(response, baseUrl) {
+  if (response.status < 300 || response.status >= 400 || !response.headers.has('location')) {
+    return null;
+  }
+  return new URL(response.headers.get('location'), baseUrl).href;
 }
 
 /**
