@@ -4,7 +4,7 @@ const CACHE_SECONDS = 21600;
 
 export async function fetchBilibiliCcSubtitles(bvid, options = {}) {
   const { cookie = '', state, fetcher = fetchWithRetry, track = 0 } = options;
-  const cacheKey = `subtitle:bilibili:${bvid}:${cookie ? 'auth' : 'anon'}:${track}`;
+  const cacheKey = `subtitle:v2:bilibili:${bvid}:${cookie ? 'auth' : 'anon'}:${track}`;
   const cached = state?.getJson(cacheKey);
   if (cached) return cached;
 

@@ -126,6 +126,35 @@ test('Bilibili CC fetch passes Cookie, normalizes protocol-relative URL and cach
   assert.ok(calls.every((call) => call.options.cookie === 'SESSDATA=private'));
 });
 
+test('Bilibili CC ignores unavailable results cached by the previous loader', async () => {
+  const state = createMemoryState();
+  state.setJson('subtitle:bilibili:BV1stale:auth:0', {
+    available: false,
+    platform: 'bilibili',
+    tracks: [],
+    cues: [],
+  }, 21600);
+  const calls = [];
+  const fetcher = async (url) => {
+    calls.push(url);
+    if (url.includes('/view?')) return Response.json({ code: 0, data: { cid: 99 } });
+    if (url.includes('/player/wbi/v2?')) return Response.json({
+      code: 0,
+      data: { subtitle: { subtitles: [
+        { lan: 'zh-CN', lan_doc: '中文', subtitle_url: '//i.example/sub.json' },
+      ] } },
+    });
+    return Response.json({ body: [{ from: 1, to: 3, content: 'fresh' }] });
+  };
+
+  const result = await fetchBilibiliCcSubtitles('BV1stale', {
+    cookie: 'SESSDATA=private', state, fetcher,
+  });
+  assert.equal(result.available, true);
+  assert.equal(result.cues[0].text, 'fresh');
+  assert.equal(calls.length, 3);
+});
+
 test('Bilibili videos without CC return an empty successful result', async () => {
   const fetcher = async (url) => url.includes('/view?')
     ? Response.json({ code: 0, data: { cid: 99 } })
