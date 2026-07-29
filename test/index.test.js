@@ -108,6 +108,8 @@ test('only the new API endpoints are exposed', async () => {
     ['', '360p', '480p', '720p', '1080p', '4k', '8k'],
   );
   assert.match(controls['platform-hint'].textContent, /Bilibili 视频/);
+  assert.deepEqual(detect('av170001'), ['', '360p', '480p', '720p', '1080p', '4k', '8k']);
+  assert.match(controls['platform-hint'].textContent, /Bilibili 视频/);
   assert.deepEqual(detect('https://live.bilibili.com/6'), ['', 'original']);
   assert.deepEqual(detect('https://music.163.com/song?id=186016'), ['', '128k', '256k', '320k', 'lossless']);
   assert.match(controls['platform-hint'].textContent, /网易云歌曲/);

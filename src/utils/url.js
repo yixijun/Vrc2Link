@@ -42,10 +42,20 @@ export function normalizeSourceUrl(input) {
   const text = String(input || '').trim();
   if (!text) return text;
 
+  const bareBilibiliAv = text.match(/^av(\d+)$/iu);
+  if (bareBilibiliAv) {
+    return `https://www.bilibili.com/video/av${bareBilibiliAv[1]}`;
+  }
+
   const candidates = text.match(/https?:\/\/[^\s<>"'，。；！？、）】,;\])]+/giu) || [];
   for (const rawCandidate of candidates) {
     const candidate = rawCandidate.replace(/[.!]+$/u, '');
     if (identifyPlatform(candidate)) return candidate;
+  }
+
+  const copiedBilibiliAv = text.match(/(?:^|[^a-zA-Z0-9])av(\d+)(?![a-zA-Z0-9])/iu);
+  if (copiedBilibiliAv) {
+    return `https://www.bilibili.com/video/av${copiedBilibiliAv[1]}`;
   }
   return text;
 }

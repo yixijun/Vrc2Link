@@ -541,9 +541,9 @@ const HOME_HTML = `<!doctype html>
           <div class="builder-form">
             <p class="panel-title">创建请求</p>
             <div class="field">
-              <label class="field-label" for="media-url">媒体链接或分享文本</label>
+              <label class="field-label" for="media-url">媒体链接、AV 号或分享文本</label>
               <div class="input-with-action">
-                <input id="media-url" name="url" type="text" inputmode="url" required placeholder="粘贴 Bilibili、抖音、快手、YouTube 或网易云链接" autocomplete="off" aria-describedby="platform-hint">
+                <input id="media-url" name="url" type="text" inputmode="url" required placeholder="粘贴平台链接、Bilibili AV 号或分享文本" autocomplete="off" aria-describedby="platform-hint">
                 <button class="paste-button" id="paste-media" type="button">粘贴</button>
               </div>
               <p class="platform-hint" id="platform-hint">等待识别媒体平台</p>
@@ -599,7 +599,7 @@ const HOME_HTML = `<!doctype html>
       <div class="section-inner">
         <div class="section-heading">
           <h2>接口</h2>
-          <p>媒体地址通过 URL 编码后的 <code>url</code> 参数传入。支持完整平台链接和包含链接的分享文本。</p>
+          <p>媒体地址通过 URL 编码后的 <code>url</code> 参数传入。支持完整平台链接、Bilibili AV 号和分享文本。</p>
         </div>
 
         <article class="endpoint">
@@ -907,7 +907,9 @@ TRUST_PROXY=false</code></pre>
     }
 
     function detectMedia(input) {
-      const candidate = extractUrl(input.trim());
+      const trimmed = input.trim();
+      if (/(?:^|[^a-zA-Z0-9])av\\d+(?![a-zA-Z0-9])/i.test(trimmed)) return 'bilibiliVideo';
+      const candidate = extractUrl(trimmed);
       if (!candidate) return '';
 
       try {
