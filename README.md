@@ -1,6 +1,6 @@
 # Vrc2Link
 
-面向 VRChat 的 Bilibili、抖音、快手、YouTube 和网易云媒体链接服务。运行时零第三方依赖，需要 Node.js 24 或更高版本（使用内置 SQLite）。
+面向 VRChat 的 Bilibili、抖音、快手、YouTube、网易云及通用视频网站媒体链接服务。核心服务需要 Node.js 24 或更高版本（使用内置 SQLite）；通用解析功能可选依赖 `yt-dlp`。
 
 ## 启动
 
@@ -59,6 +59,29 @@ DANMAKU_MAX_LIVE_MESSAGES=30
 
 抖音直播弹幕不在本次范围内；原有抖音短视频解析不受影响。Unity 安装步骤见 `Unity/Assets/Vrc2LinkDanmaku/README.md`。
 
+## 通用视频网站解析
+
+通用解析使用 `yt-dlp` 读取公开网页中的媒体信息。专用平台解析器仍然优先；只有无法识别的平台才会进入通用解析。该功能不绕过 DRM、不下载或合并音视频，也不支持播放列表。`/play` 只会选择同时包含音频和视频的单文件或 HLS 流。
+
+先在服务器安装并确认命令可用：
+
+```bash
+python3 -m pip install -U yt-dlp
+yt-dlp --version
+```
+
+再在生产 `config.env` 中启用：
+
+```dotenv
+GENERIC_RESOLVER_ENABLED=true
+GENERIC_RESOLVER_REQUIRE_KEY=true
+YT_DLP_PATH=yt-dlp
+GENERIC_RESOLVER_TIMEOUT_MS=20000
+GENERIC_RESOLVER_MAX_CONCURRENT=2
+```
+
+默认要求请求携带正确的 `key`。如确实需要允许匿名 VRChat 请求，可将 `GENERIC_RESOLVER_REQUIRE_KEY=false`，但应保持现有 IP 限流并限制源站访问。私网、回环、链路本地和保留地址会被拒绝。
+
 | 环境变量 | 用途 |
 | --- | --- |
 | `PORT` | HTTP 端口，默认 `7890` |
@@ -73,6 +96,11 @@ DANMAKU_MAX_LIVE_MESSAGES=30
 | `RATE_LIMIT_AUTH_PER_MINUTE` | 每个 API key 每窗口请求数，默认 `60` |
 | `RATE_LIMIT_IP_PER_MINUTE` | 每个 IP 的总请求数，默认 `120` |
 | `RATE_LIMIT_WINDOW_SECONDS` | 限流窗口秒数，默认 `60` |
+| `GENERIC_RESOLVER_ENABLED` | 是否启用通用视频网站解析，默认 `false` |
+| `GENERIC_RESOLVER_REQUIRE_KEY` | 通用解析是否要求正确 API key，默认 `true` |
+| `YT_DLP_PATH` | `yt-dlp` 命令或绝对路径 |
+| `GENERIC_RESOLVER_TIMEOUT_MS` | 单次通用解析超时毫秒数，默认 `20000` |
+| `GENERIC_RESOLVER_MAX_CONCURRENT` | 通用解析最大并发进程数，默认 `2` |
 | `TRUST_PROXY` | 是否信任代理 IP 请求头，默认 `false` |
 
 修改配置后需要重启服务。不传 `key` 时使用匿名解析；传入正确的 `key` 时才会使用服务器 Cookie；错误的 `key` 返回 `401`。

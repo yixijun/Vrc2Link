@@ -1,26 +1,40 @@
 import { AppError } from './errors.js';
 import { parseLive, parseVideo } from './platforms/bilibili.js';
+import { parseGenericVideo } from './platforms/generic.js';
 import { parseMv, parseSong } from './platforms/netease.js';
 import { parseShortVideo } from './platforms/short-video.js';
 import { qualityRank } from './utils/quality.js';
 import { expandShortLink, extractId, identifyPlatform, normalizeSourceUrl } from './utils/url.js';
 
 export async function resolveMedia(rawUrl, options = {}) {
-  const { authenticated = false, cookies = {}, quality } = options;
+  const { authenticated = false, cookies = {}, quality, generic = {} } = options;
   if (!rawUrl?.trim()) {
     throw new AppError(400, 'missing_url', 'Missing required parameter: url');
   }
 
-  let target = normalizeSourceUrl(rawUrl);
+  const allowGeneric = generic.enabled === true;
+  let target = normalizeSourceUrl(rawUrl, { allowGeneric });
   try {
     target = await expandShortLink(target);
   } catch (error) {
     throw new AppError(400, 'short_link_failed', `Failed to resolve short link: ${error.message}`);
   }
 
-  const platform = identifyPlatform(target);
+  const platform = identifyPlatform(target, { allowGeneric });
   if (!platform) {
-    throw new AppError(400, 'unsupported_url', 'Only Bilibili, Netease, Douyin, Kuaishou, and YouTube URLs are supported');
+    throw new AppError(400, 'unsupported_url', 'The URL is unsupported or the generic resolver is disabled');
+  }
+
+  if (platform === 'generic') {
+    if (generic.requireKey !== false && !authenticated) {
+      throw new AppError(401, 'generic_auth_required', 'Generic resolver requires a valid API key');
+    }
+    try {
+      return normalizeResult(await parseGenericVideo(target, generic), authenticated);
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError(502, 'upstream_error', error.message);
+    }
   }
 
   if (platform === 'youtube') {

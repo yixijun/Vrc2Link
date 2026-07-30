@@ -117,6 +117,8 @@ test('only the new API endpoints are exposed', async () => {
   assert.match(controls['platform-hint'].textContent, /快手视频/);
   assert.deepEqual(detect('看看这个 https://youtu.be/dQw4w9WgXcQ?t=42 复制打开'), ['']);
   assert.match(controls['platform-hint'].textContent, /YouTube 视频/);
+  assert.deepEqual(detect('https://video.example/watch/123'), ['']);
+  assert.match(controls['platform-hint'].textContent, /通用视频网站/);
 
   await controls['paste-media'].listeners.click();
   assert.equal(controls['media-url'].value, pastedText);
@@ -149,6 +151,37 @@ test('anonymous API requests do not receive server cookies', async () => {
   assert.equal(response.status, 200);
   assert.equal(receivedOptions.authenticated, false);
   assert.deepEqual(receivedOptions.cookies, {});
+});
+
+test('generic resolver configuration is passed to the media resolver', async () => {
+  let receivedOptions;
+  const source = 'https://video.example/watch/123';
+  const response = await handleRequest(
+    new Request(`http://localhost/api?key=secret&url=${encodeURIComponent(source)}`),
+    {
+      env: {
+        API_KEY: 'secret',
+        GENERIC_RESOLVER_ENABLED: 'true',
+        GENERIC_RESOLVER_REQUIRE_KEY: 'true',
+        YT_DLP_PATH: '/opt/yt-dlp',
+        GENERIC_RESOLVER_TIMEOUT_MS: '15000',
+        GENERIC_RESOLVER_MAX_CONCURRENT: '3',
+      },
+      resolve: async (_url, options) => {
+        receivedOptions = options;
+        return { ...MEDIA, platform: 'generic', authenticated: true };
+      },
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(receivedOptions.generic, {
+    enabled: true,
+    requireKey: true,
+    ytDlpPath: '/opt/yt-dlp',
+    timeoutMs: 15000,
+    maxConcurrent: 3,
+  });
 });
 
 test('a valid key enables server cookies and an invalid key returns 401', async () => {

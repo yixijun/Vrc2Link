@@ -25,6 +25,8 @@ test('environment variables override file config without empty PM2 values erasin
       SQLITE_PATH: 'data/file.sqlite',
       RATE_LIMIT_ANON_PER_MINUTE: '10',
       TRUST_PROXY: 'false',
+      GENERIC_RESOLVER_ENABLED: 'false',
+      YT_DLP_PATH: 'file-yt-dlp',
     },
     {
       API_KEY: 'environment-key',
@@ -32,6 +34,8 @@ test('environment variables override file config without empty PM2 values erasin
       SQLITE_PATH: 'data/environment.sqlite',
       RATE_LIMIT_ANON_PER_MINUTE: '20',
       TRUST_PROXY: 'true',
+      GENERIC_RESOLVER_ENABLED: 'true',
+      YT_DLP_PATH: '/usr/local/bin/yt-dlp',
     },
   );
 
@@ -40,4 +44,6 @@ test('environment variables override file config without empty PM2 values erasin
   assert.equal(config.SQLITE_PATH, 'data/environment.sqlite');
   assert.equal(config.RATE_LIMIT_ANON_PER_MINUTE, '20');
   assert.equal(config.TRUST_PROXY, 'true');
+  assert.equal(config.GENERIC_RESOLVER_ENABLED, 'true');
+  assert.equal(config.YT_DLP_PATH, '/usr/local/bin/yt-dlp');
 });

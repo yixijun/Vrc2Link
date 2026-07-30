@@ -39,9 +39,10 @@ const shortLinkCache = new Map();
 /**
  * Extract the first supported media URL from a raw URL or copied share text.
  * @param {string} input
+ * @param {{ allowGeneric?: boolean }} [options]
  * @returns {string}
  */
-export function normalizeSourceUrl(input) {
+export function normalizeSourceUrl(input, options = {}) {
   const text = String(input || '').trim();
   if (!text) return text;
 
@@ -51,10 +52,15 @@ export function normalizeSourceUrl(input) {
   }
 
   const candidates = text.match(/https?:\/\/[^\s<>"'，。；！？、）】,;\])]+/giu) || [];
+  let genericCandidate = '';
   for (const rawCandidate of candidates) {
     const candidate = rawCandidate.replace(/[.!]+$/u, '');
     if (identifyPlatform(candidate)) return candidate;
+    if (!genericCandidate && options.allowGeneric && isHttpUrl(candidate)) {
+      genericCandidate = candidate;
+    }
   }
+  if (genericCandidate) return genericCandidate;
 
   const copiedBilibiliAv = text.match(/(?:^|[^a-zA-Z0-9])av(\d+)(?![a-zA-Z0-9])/iu);
   if (copiedBilibiliAv) {
@@ -66,9 +72,10 @@ export function normalizeSourceUrl(input) {
 /**
  * Identify the platform from a URL string.
  * @param {string} urlStr
+ * @param {{ allowGeneric?: boolean }} [options]
  * @returns {string|null} platform name or null
  */
-export function identifyPlatform(urlStr) {
+export function identifyPlatform(urlStr, options = {}) {
   let hostname;
   try {
     hostname = new URL(urlStr).hostname;
@@ -80,7 +87,16 @@ export function identifyPlatform(urlStr) {
       return rule.name;
     }
   }
+  if (options.allowGeneric && isHttpUrl(urlStr)) return 'generic';
   return null;
+}
+
+function isHttpUrl(urlStr) {
+  try {
+    return ['http:', 'https:'].includes(new URL(urlStr).protocol);
+  } catch {
+    return false;
+  }
 }
 
 /**

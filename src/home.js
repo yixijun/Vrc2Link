@@ -718,7 +718,7 @@ TRUST_PROXY=false</code></pre>
 
   <footer>
     <span>Vrc2Link v2.0.0</span>
-    <span>Bilibili · Douyin · Kuaishou · Netease · YouTube</span>
+    <span>Bilibili · Douyin · Kuaishou · Netease · YouTube · Generic</span>
   </footer>
 
   <script>
@@ -786,6 +786,12 @@ TRUST_PROXY=false</code></pre>
         help: '不解析 YouTube 媒体流，/play 直接把原链接交给 VRChat。',
         qualities: [['', '直接跳转']],
       },
+      genericVideo: {
+        platform: 'generic',
+        label: '已识别：通用视频网站',
+        help: '由服务器上的 yt-dlp 提取公开、非 DRM 播放流；可用画质由目标网站决定。',
+        qualities: [['', '自动选择']],
+      },
     };
 
     function selectedMode() {
@@ -842,6 +848,7 @@ TRUST_PROXY=false</code></pre>
             hostname === 'youtube-nocookie.com' || hostname.endsWith('.youtube-nocookie.com')) {
           return 'youtubeVideo';
         }
+        if (url.protocol === 'http:' || url.protocol === 'https:') return 'genericVideo';
       } catch {
         return '';
       }
@@ -863,7 +870,7 @@ TRUST_PROXY=false</code></pre>
       }));
 
       platformHint.dataset.platform = media?.platform || '';
-      platformHint.textContent = media?.label || '未识别：请粘贴 Bilibili、抖音、快手、YouTube 或网易云链接';
+      platformHint.textContent = media?.label || '未识别：请粘贴 HTTP(S) 视频链接';
       qualityHelp.textContent = media?.help || '识别媒体平台后显示对应的画质或音质。';
     }
 

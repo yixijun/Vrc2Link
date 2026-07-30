@@ -90,3 +90,20 @@ test('recognises YouTube links in copied text', () => {
   assert.equal(url, 'https://youtu.be/dQw4w9WgXcQ?t=42');
   assert.equal(identifyPlatform(url), 'youtube');
 });
+
+test('generic URL recognition is opt-in and extracts URLs from copied text', () => {
+  const input = '看看这个视频 https://video.example/watch/123，复制打开';
+  const url = normalizeSourceUrl(input, { allowGeneric: true });
+
+  assert.equal(url, 'https://video.example/watch/123');
+  assert.equal(identifyPlatform(url), null);
+  assert.equal(identifyPlatform(url, { allowGeneric: true }), 'generic');
+});
+
+test('known platforms take priority over earlier generic links in copied text', () => {
+  const input = '来源 https://example.com/post 原视频 https://www.bilibili.com/video/BV1xx411c7mD';
+  assert.equal(
+    normalizeSourceUrl(input, { allowGeneric: true }),
+    'https://www.bilibili.com/video/BV1xx411c7mD',
+  );
+});

@@ -89,13 +89,19 @@ async function dispatchRequest(request, dependencies, context) {
       : {};
     const quality = url.pathname === '/play' ? url.searchParams.get('quality') || undefined : undefined;
     const rawUrl = url.searchParams.get('url');
-    context.platform = identifyPlatform(normalizeSourceUrl(rawUrl || '')) || null;
-    const cacheKey = !authenticated && state ? mediaCacheKey(rawUrl, quality) : undefined;
+    const generic = genericOptions(env);
+    context.platform = identifyPlatform(
+      normalizeSourceUrl(rawUrl || '', { allowGeneric: generic.enabled }),
+      { allowGeneric: generic.enabled },
+    ) || null;
+    const cacheKey = !authenticated && state
+      ? mediaCacheKey(rawUrl, quality, generic.enabled)
+      : undefined;
     let result = cacheKey ? state.getJson(cacheKey) : undefined;
     const cacheHit = result !== undefined;
     context.cacheHit = cacheKey ? cacheHit : null;
     if (!cacheHit) {
-      result = await resolve(rawUrl, { authenticated, cookies, quality });
+      result = await resolve(rawUrl, { authenticated, cookies, quality, generic });
       if (cacheKey) state.setJson(cacheKey, result, positiveInteger(env.CACHE_TTL_SECONDS, 300));
     }
     context.platform = result.platform || null;
@@ -221,12 +227,27 @@ function writeRequestLog(logger, entry) {
   }
 }
 
-function mediaCacheKey(rawUrl, quality) {
-  const normalized = normalizeSourceUrl(rawUrl || '');
+function mediaCacheKey(rawUrl, quality, allowGeneric = false) {
+  const normalized = normalizeSourceUrl(rawUrl || '', { allowGeneric });
   const digest = createHash('sha256')
     .update(`${normalized}\n${quality || ''}`)
     .digest('hex');
   return `media:${digest}`;
+}
+
+function genericOptions(env) {
+  return {
+    enabled: booleanValue(env.GENERIC_RESOLVER_ENABLED, false),
+    requireKey: booleanValue(env.GENERIC_RESOLVER_REQUIRE_KEY, true),
+    ytDlpPath: env.YT_DLP_PATH || 'yt-dlp',
+    timeoutMs: positiveInteger(env.GENERIC_RESOLVER_TIMEOUT_MS, 20000),
+    maxConcurrent: positiveInteger(env.GENERIC_RESOLVER_MAX_CONCURRENT, 2),
+  };
+}
+
+function booleanValue(value, fallback) {
+  if (value == null || value === '') return fallback;
+  return String(value).toLowerCase() === 'true';
 }
 
 function positiveInteger(value, fallback) {
