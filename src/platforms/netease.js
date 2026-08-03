@@ -72,7 +72,7 @@ export async function parseSong(songId, options = {}) {
 export async function parsePlaylist(playlist, options = {}) {
   const { cookie = '', resolverPrefix = '' } = options;
   const detail = await fetchJson(`https://music.163.com/api/playlist/detail?id=${encodeURIComponent(playlist.id)}&limit=1000&offset=0`, { cookie });
-  const data = detail?.playlist;
+  const data = detail?.playlist || detail?.result;
   if (!data) throw new Error(`Netease playlist not found: ${playlist.id}`);
   const tracks = await hydratePlaylistTracks(data, cookie);
   if (!tracks.length) throw new Error(`Netease playlist is empty or unavailable: ${playlist.id}`);
@@ -87,8 +87,8 @@ export async function parsePlaylist(playlist, options = {}) {
         title: `${index + 1}. ${track.name || '\u672a\u547d\u540d\u6b4c\u66f2'}`,
         sourceUrl: source,
         url: resolverUrl(source, resolverPrefix),
-        cover: track.al?.picUrl || '',
-        duration: Math.floor((track.dt || 0) / 1000),
+        cover: track.al?.picUrl || track.album?.picUrl || '',
+        duration: Math.floor((track.dt ?? track.duration ?? 0) / 1000),
       };
     }),
   };

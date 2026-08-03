@@ -53,7 +53,11 @@ export async function resolveMedia(rawUrl, options = {}) {
 
   const cookie = cookies[platform] || '';
   try {
-    const result = await parsePlatform(platform, extracted, { cookie, quality, sourceUrl: target, resolverPrefix: options.resolverPrefix || '' });
+    const result = await parsePlatform(platform, extracted, {
+      cookie, quality, sourceUrl: target,
+      resolverPrefix: options.resolverPrefix || '',
+      playlistMode: options.playlistMode === true,
+    });
     if (!result.playlist?.length && !result.streams?.some((stream) => stream.url)) {
       throw new Error('No playable streams found');
     }
@@ -112,7 +116,11 @@ async function parsePlatform(platform, extracted, options) {
   if (platform === 'bilibili') {
     return extracted.type === 'live'
       ? parseLive(extracted.id, options)
-      : parseVideo(extracted.id, { ...options, page: extracted.page });
+      : parseVideo(extracted.id, {
+          ...options,
+          page: extracted.page,
+          includeSeasonPlaylist: options.playlistMode,
+        });
   }
   if (platform === 'douyin' || platform === 'kuaishou') {
     return parseShortVideo(platform, options.sourceUrl, { ...options, id: extracted.id });

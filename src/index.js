@@ -88,6 +88,7 @@ async function dispatchRequest(request, dependencies, context) {
         ].filter(([, value]) => value))
       : {};
     const quality = url.pathname === '/play' ? url.searchParams.get('quality') || undefined : undefined;
+    const playlistMode = url.pathname === '/playlist';
     const rawUrl = url.searchParams.get('url');
     const generic = genericOptions(env);
     context.platform = identifyPlatform(
@@ -95,14 +96,14 @@ async function dispatchRequest(request, dependencies, context) {
       { allowGeneric: generic.enabled },
     ) || null;
     const cacheKey = !authenticated && state
-      ? mediaCacheKey(rawUrl, quality, generic.enabled)
+      ? mediaCacheKey(rawUrl, quality, generic.enabled, playlistMode)
       : undefined;
     let result = cacheKey ? state.getJson(cacheKey) : undefined;
     const cacheHit = result !== undefined;
     context.cacheHit = cacheKey ? cacheHit : null;
     if (!cacheHit) {
       result = await resolve(rawUrl, {
-        authenticated, cookies, quality, generic,
+        authenticated, cookies, quality, generic, playlistMode,
         resolverPrefix: env.PLAYLIST_RESOLVER_PREFIX || 'https://vrc2link.luonako.cn/play?url=',
       });
       if (cacheKey) state.setJson(cacheKey, result, positiveInteger(env.CACHE_TTL_SECONDS, 300));
@@ -240,10 +241,10 @@ function writeRequestLog(logger, entry) {
   }
 }
 
-function mediaCacheKey(rawUrl, quality, allowGeneric = false) {
+function mediaCacheKey(rawUrl, quality, allowGeneric = false, playlistMode = false) {
   const normalized = normalizeSourceUrl(rawUrl || '', { allowGeneric });
   const digest = createHash('sha256')
-    .update(`${normalized}\n${quality || ''}`)
+    .update(`${normalized}\n${quality || ''}\n${playlistMode ? 'playlist' : 'media'}`)
     .digest('hex');
   return `media:${digest}`;
 }

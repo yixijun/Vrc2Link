@@ -9,7 +9,10 @@ import { bilibiliQuality, bilibiliQnForQuality } from '../utils/quality.js';
 // ---- Parse video ----
 
 export async function parseVideo(videoId, options = {}) {
-  const { cookie = '', quality: targetQuality, page = 1 } = options;
+  const {
+    cookie = '', quality: targetQuality, page = 1,
+    includeSeasonPlaylist = false, resolverPrefix = '',
+  } = options;
   const avMatch = String(videoId).match(/^av(\d+)$/iu);
   const viewQuery = avMatch ? { aid: avMatch[1] } : { bvid: videoId };
 
@@ -30,6 +33,41 @@ export async function parseVideo(videoId, options = {}) {
   const bvid = vdata.bvid || (avMatch ? '' : videoId);
   if (!bvid) throw new Error(`Bilibili BV id not found for: ${videoId}`);
   const author = vdata.owner?.name || '';
+
+  if (includeSeasonPlaylist && vdata.ugc_season?.sections?.length) {
+    const season = vdata.ugc_season;
+    const entries = [];
+    const seen = new Set();
+    for (const section of season.sections) {
+      for (const episode of section.episodes || []) {
+        const episodeBvid = episode.bvid || episode.arc?.bvid || '';
+        if (!episodeBvid || seen.has(episodeBvid)) continue;
+        seen.add(episodeBvid);
+        const source = `https://www.bilibili.com/video/${episodeBvid}`;
+        entries.push({
+          id: episodeBvid,
+          title: episode.title || episode.arc?.title || `视频 ${entries.length + 1}`,
+          sourceUrl: source,
+          url: resolverUrl(source, resolverPrefix),
+          cover: episode.arc?.pic || episode.cover || '',
+          duration: Number(episode.arc?.duration ?? episode.duration) || 0,
+        });
+      }
+    }
+    if (entries.length) {
+      return {
+        platform: 'bilibili', type: 'playlist',
+        meta: {
+          id: String(season.id || bvid),
+          title: season.title || title,
+          author,
+          cover: season.cover || cover,
+          duration: 0,
+        },
+        playlist: entries,
+      };
+    }
+  }
 
   // PGC videos use a different player endpoint even when opened through a BV URL.
   const isPgc = /\/bangumi\/play\//.test(vdata.redirect_url || '');

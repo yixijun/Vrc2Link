@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { parsePlaylist as parseBilibiliPlaylist } from '../src/platforms/bilibili.js';
+import { parsePlaylist as parseBilibiliPlaylist, parseVideo as parseBilibiliVideo } from '../src/platforms/bilibili.js';
 import { parsePlaylist as parseNeteasePlaylist } from '../src/platforms/netease.js';
 import { handleRequest } from '../src/index.js';
+import { createMemoryState } from '../src/state.js';
 import { extractId } from '../src/utils/url.js';
 
 test('recognises Bilibili collection, series, and Netease playlist URLs', () => {
@@ -59,6 +60,36 @@ test('Bilibili playlist parser follows collection pagination', async (t) => {
   assert.deepEqual(result.playlist.map((item) => item.id), ['BVpage1', 'BVpage2', 'BVpage3']);
 });
 
+test('Bilibili video exposes its UGC season when playlist mode is requested', async (t) => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    assert.match(String(input), /web-interface\/view/);
+    return Response.json({ code: 0, data: {
+      bvid: 'BV12x3u6iEUM',
+      title: 'Current episode',
+      owner: { mid: 1745143606, name: 'Uploader' },
+      ugc_season: {
+        id: 1571735,
+        title: 'Season fixture',
+        sections: [{ episodes: [
+          { bvid: 'BVepisode1', title: 'Episode 1', arc: { pic: 'https://cdn.example/1.jpg', duration: 61 } },
+          { bvid: 'BVepisode2', title: 'Episode 2', arc: { pic: 'https://cdn.example/2.jpg', duration: 62 } },
+        ] }],
+      },
+    } });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const result = await parseBilibiliVideo('BV12x3u6iEUM', {
+    includeSeasonPlaylist: true,
+    resolverPrefix: 'https://vrc2link.example/play?url=',
+  });
+  assert.equal(result.type, 'playlist');
+  assert.equal(result.meta.title, 'Season fixture');
+  assert.deepEqual(result.playlist.map((item) => item.id), ['BVepisode1', 'BVepisode2']);
+  assert.match(result.playlist[1].url, /BVepisode2$/);
+});
+
 test('Netease playlist parser returns songs in order', async (t) => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
@@ -103,6 +134,27 @@ test('Netease playlist parser fetches track details omitted from playlist respon
   assert.deepEqual(result.playlist.map((item) => item.id), ['1', '2']);
 });
 
+test('Netease playlist parser accepts the public result response shape', async (t) => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    assert.match(String(input), /playlist\/detail/);
+    return Response.json({ code: 200, result: {
+      name: 'Public playlist fixture',
+      creator: { nickname: 'Tester' },
+      tracks: [{ id: 2481925967, name: 'Public track', duration: 63000, album: { picUrl: 'https://cdn.example/cover.jpg' } }],
+    } });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const result = await parseNeteasePlaylist(
+    { id: '2481925967' },
+    { resolverPrefix: 'https://vrc2link.example/play?url=' },
+  );
+  assert.equal(result.meta.title, 'Public playlist fixture');
+  assert.equal(result.playlist[0].duration, 63);
+  assert.equal(result.playlist[0].cover, 'https://cdn.example/cover.jpg');
+});
+
 
 test('/play returns VizVid dynamic playlist JSON for playlist results', async () => {
   const response = await handleRequest(
@@ -138,4 +190,30 @@ test('/playlist returns normalized playlist data for the Unity editor importer',
     title: 'Fixture playlist',
     playlist: [{ id: '1', title: 'Track 1', url: 'https://vrc2link.example/play?url=song-1' }],
   });
+});
+
+test('/play and /playlist keep separate cache entries for the same Bilibili video', async () => {
+  const state = createMemoryState();
+  const playlistModes = [];
+  const resolve = async (_url, options) => {
+    playlistModes.push(options.playlistMode);
+    if (options.playlistMode) {
+      return {
+        platform: 'bilibili', type: 'playlist', title: 'Season fixture',
+        playlist: [{ id: '1', title: 'Episode 1', url: 'https://vrc2link.example/play?url=episode-1' }],
+      };
+    }
+    return {
+      platform: 'bilibili', type: 'video', title: 'Episode 1',
+      streams: [{ quality: '720p', format: 'mp4', codec: 'avc', url: 'https://cdn.example/video.mp4' }],
+    };
+  };
+  const source = encodeURIComponent('https://www.bilibili.com/video/BV12x3u6iEUM');
+
+  const playResponse = await handleRequest(new Request(`http://localhost/play?url=${source}`), { state, resolve });
+  const playlistResponse = await handleRequest(new Request(`http://localhost/playlist?url=${source}`), { state, resolve });
+
+  assert.equal(playResponse.status, 302);
+  assert.equal(playlistResponse.status, 200);
+  assert.deepEqual(playlistModes, [false, true]);
 });
