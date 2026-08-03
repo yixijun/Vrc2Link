@@ -91,6 +91,16 @@ export function identifyPlatform(urlStr, options = {}) {
   return null;
 }
 
+function videoResult(id, pageValue) {
+  const page = positivePage(pageValue);
+  return page > 1 ? { type: 'video', id, page } : { type: 'video', id };
+}
+
+function positivePage(value) {
+  const page = Number.parseInt(value, 10);
+  return Number.isInteger(page) && page > 0 ? page : 1;
+}
+
 function isHttpUrl(urlStr) {
   try {
     return ['http:', 'https:'].includes(new URL(urlStr).protocol);
@@ -201,19 +211,43 @@ export function extractId(urlStr, platform) {
       const match = pathname.match(/^\/(\d+)/);
       if (match) return { type: 'live', id: match[1] };
     }
+    const collectionId = searchParams.get('sid') || searchParams.get('season_id') || searchParams.get('series_id');
+    if (collectionId && /collectiondetail|seriesdetail/iu.test(pathname)) {
+      return {
+        type: 'playlist',
+        id: collectionId,
+        kind: /seriesdetail/iu.test(pathname) || searchParams.has('series_id') ? 'series' : 'season',
+        mid: url.hostname === 'space.bilibili.com' ? pathname.match(/^\/(\d+)/u)?.[1] || '' : '',
+        bvid: searchParams.get('bvid') || '',
+      };
+    }
+    const listMatch = pathname.match(/\/list\/(ml)?(\d+)/iu);
+    if (listMatch) {
+      return {
+        type: 'playlist', id: listMatch[2], kind: listMatch[1] ? 'favorite' : 'collection',
+        mid: searchParams.get('mid') || '', bvid: searchParams.get('bvid') || '',
+      };
+    }
+    const mediaListMatch = pathname.match(/\/medialist\/detail\/ml(\d+)/iu);
+    if (mediaListMatch) return { type: 'playlist', id: mediaListMatch[1], kind: 'favorite', mid: '', bvid: searchParams.get('bvid') || '' };
     // Video: bilibili.com/video/BVxxx or b23.tv/BVxxx
     const bvMatch = pathname.match(/\/(BV[a-zA-Z0-9]+)/);
-    if (bvMatch) return { type: 'video', id: bvMatch[1] };
+    if (bvMatch) return videoResult(bvMatch[1], searchParams.get('p'));
     // Alternate: ?bvid=BVxxx
     const bvid = searchParams.get('bvid');
-    if (bvid) return { type: 'video', id: bvid };
+    if (bvid) return videoResult(bvid, searchParams.get('p'));
     // Short link that already resolved to video
     const avMatch = pathname.match(/\/(av\d+)/i);
-    if (avMatch) return { type: 'video', id: avMatch[1] };
+    if (avMatch) return videoResult(avMatch[1], searchParams.get('p'));
     return null;
   }
 
   if (platform === 'netease') {
+    if (pathname.includes('/playlist') || url.hash.includes('/playlist')) {
+      const hashPlaylistId = url.hash.match(/\/playlist\?id=(\d+)/iu)?.[1];
+      const playlistId = searchParams.get('id') || hashPlaylistId;
+      if (playlistId) return { type: 'playlist', id: playlistId };
+    }
     // MV: music.163.com/mv?id=xxx or music.163.com/#/mv?id=xxx
     if (pathname.includes('/mv') || url.hash.includes('/mv')) {
       // Hash-based routing: #/mv?id=xxx

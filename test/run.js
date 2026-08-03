@@ -5,3 +5,5 @@ import './index.test.js';
 import './url.test.js';
 import './danmaku.test.js';
 import './generic.test.js';
+
+import './playlist.test.js';

@@ -65,7 +65,7 @@ async function dispatchRequest(request, dependencies, context) {
     if (url.pathname === '/danmaku/current' || isCurrentDanmakuApi(url)) {
       return await handleDanmakuRequest(url, dependencies);
     }
-    if (url.pathname !== '/api' && url.pathname !== '/play') {
+    if (url.pathname !== '/api' && url.pathname !== '/play' && url.pathname !== '/playlist') {
       throw new AppError(404, 'not_found', 'Endpoint not found');
     }
 
@@ -101,12 +101,25 @@ async function dispatchRequest(request, dependencies, context) {
     const cacheHit = result !== undefined;
     context.cacheHit = cacheKey ? cacheHit : null;
     if (!cacheHit) {
-      result = await resolve(rawUrl, { authenticated, cookies, quality, generic });
+      result = await resolve(rawUrl, {
+        authenticated, cookies, quality, generic,
+        resolverPrefix: env.PLAYLIST_RESOLVER_PREFIX || 'https://vrc2link.luonako.cn/play?url=',
+      });
       if (cacheKey) state.setJson(cacheKey, result, positiveInteger(env.CACHE_TTL_SECONDS, 300));
     }
     context.platform = result.platform || null;
 
-    if (url.pathname === '/api') {
+    if (url.pathname === '/play' && result.playlist) {
+      const entries = result.playlist.map((item) => ({ url: item.url, title: item.title, playerIndex: 1 }));
+      return jsonResponse({ [result.title || 'Playlist']: entries }, {
+        headers: { ...rateLimitHeaders, ...(cacheKey ? { 'X-Cache': cacheHit ? 'HIT' : 'MISS' } : {}) },
+      });
+    }
+
+    if (url.pathname === '/api' || url.pathname === '/playlist') {
+      if (url.pathname === '/playlist' && !result.playlist) {
+        throw new AppError(422, 'not_a_playlist', 'The URL did not resolve to a playlist');
+      }
       if (url.searchParams.get('danmaku') === '1') {
         bindDanmakuSession({
           state,

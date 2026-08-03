@@ -30,6 +30,7 @@ RATE_LIMIT_AUTH_PER_MINUTE=60
 RATE_LIMIT_IP_PER_MINUTE=120
 RATE_LIMIT_WINDOW_SECONDS=60
 TRUST_PROXY=false
+PLAYLIST_RESOLVER_PREFIX=https://vrc2link.luonako.cn/play?url=
 ```
 
 Cookie 不需要挑选字段。在已登录的平台页面打开开发者工具，进入 Network，刷新页面，选择一个同平台请求，在 Request Headers 中复制完整的 `Cookie` 值，然后直接粘贴到对应等号后面。
@@ -156,6 +157,17 @@ Bilibili 的 1080p、4K、8K 通常是 DASH 音视频分离流，而 `/play` 只
 ```
 
 支持的常用画质：`360p`、`480p`、`720p`、`1080p`、`4k`、`8k`、`original`、`128k`、`256k`、`320k`、`lossless`。抖音和快手当前返回分享页提供的 `original` 单文件流。
+
+## `GET /playlist`
+
+解析 Bilibili 合集、系列、收藏夹、多 P 视频或网易云歌单，返回按原顺序排列的条目。每个条目的 `url` 已通过 `PLAYLIST_RESOLVER_PREFIX` 包装，可直接写入 VizVid 的静态播放列表。
+
+```text
+/playlist?url=https%3A%2F%2Fwww.bilibili.com%2Flist%2F123456
+/playlist?url=https%3A%2F%2Fmusic.163.com%2Fplaylist%3Fid%3D123456
+```
+
+VRChat 当前没有向 Udon 开放运行时创建 `VRCUrl` 的能力，因此该接口供 Unity 编辑器在上传世界前导入列表。普通 `/play` 对单个视频或歌曲仍返回 `302`；传入播放列表时返回 VizVid 动态列表 JSON，供未来 SDK 开放该能力后使用。
 
 ## 安全
 

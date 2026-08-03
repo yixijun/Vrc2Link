@@ -69,6 +69,58 @@ export async function parseSong(songId, options = {}) {
   };
 }
 
+export async function parsePlaylist(playlist, options = {}) {
+  const { cookie = '', resolverPrefix = '' } = options;
+  const detail = await fetchJson(`https://music.163.com/api/playlist/detail?id=${encodeURIComponent(playlist.id)}&limit=1000&offset=0`, { cookie });
+  const data = detail?.playlist;
+  if (!data) throw new Error(`Netease playlist not found: ${playlist.id}`);
+  const tracks = await hydratePlaylistTracks(data, cookie);
+  if (!tracks.length) throw new Error(`Netease playlist is empty or unavailable: ${playlist.id}`);
+  return {
+    platform: 'netease',
+    type: 'playlist',
+    meta: { id: playlist.id, title: data.name || `\u7f51\u6613\u4e91\u6b4c\u5355 ${playlist.id}`, author: data.creator?.nickname || '', cover: data.coverImgUrl || '', duration: 0 },
+    playlist: tracks.map((track, index) => {
+      const source = `https://music.163.com/song?id=${track.id}`;
+      return {
+        id: String(track.id),
+        title: `${index + 1}. ${track.name || '\u672a\u547d\u540d\u6b4c\u66f2'}`,
+        sourceUrl: source,
+        url: resolverUrl(source, resolverPrefix),
+        cover: track.al?.picUrl || '',
+        duration: Math.floor((track.dt || 0) / 1000),
+      };
+    }),
+  };
+}
+
+async function hydratePlaylistTracks(playlist, cookie) {
+  const tracks = playlist.tracks || [];
+  const trackIds = (playlist.trackIds || []).map((track) => String(track?.id ?? track));
+  if (!trackIds.length || tracks.length >= trackIds.length) return tracks;
+
+  const byId = new Map(tracks.map((track) => [String(track.id), track]));
+  const missing = trackIds.filter((id) => !byId.has(id));
+  for (let offset = 0; offset < missing.length; offset += 500) {
+    const ids = missing.slice(offset, offset + 500);
+    try {
+      const detail = await fetchJson(
+        `https://music.163.com/api/song/detail?ids=${encodeURIComponent(JSON.stringify(ids))}`,
+        { cookie },
+      );
+      for (const song of detail?.songs || []) byId.set(String(song.id), song);
+    } catch {
+      // Keep the entries returned by the playlist endpoint when details are restricted.
+    }
+  }
+  return trackIds.map((id) => byId.get(id)).filter(Boolean);
+}
+
+function resolverUrl(source, prefix) {
+  if (!prefix) return source;
+  return `${prefix}${encodeURIComponent(source)}`;
+}
+
 // ---- MV ----
 
 export async function parseMv(mvId, options = {}) {

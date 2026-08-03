@@ -9,7 +9,7 @@ import { bilibiliQuality, bilibiliQnForQuality } from '../utils/quality.js';
 // ---- Parse video ----
 
 export async function parseVideo(videoId, options = {}) {
-  const { cookie = '', quality: targetQuality } = options;
+  const { cookie = '', quality: targetQuality, page = 1 } = options;
   const avMatch = String(videoId).match(/^av(\d+)$/iu);
   const viewQuery = avMatch ? { aid: avMatch[1] } : { bvid: videoId };
 
@@ -21,7 +21,12 @@ export async function parseVideo(videoId, options = {}) {
   const vdata = (await viewResp.json())?.data;
   if (!vdata) throw new Error(`Video not found: ${videoId}`);
 
-  const { cid, title = '', pic: cover = '', duration = 0, pages = [] } = vdata;
+  const { title = '', pic: cover = '', duration = 0, pages = [] } = vdata;
+  const pageIndex = Math.min(Math.max(Number(page) - 1, 0), Math.max(pages.length - 1, 0));
+  const pageData = pages[pageIndex] || pages[0] || {};
+  const cid = pageData.cid || vdata.cid;
+  const pageTitle = pageData.part || title;
+  const pageDuration = pageData.duration || duration;
   const bvid = vdata.bvid || (avMatch ? '' : videoId);
   if (!bvid) throw new Error(`Bilibili BV id not found for: ${videoId}`);
   const author = vdata.owner?.name || '';
@@ -62,7 +67,7 @@ export async function parseVideo(videoId, options = {}) {
   if (playResult.durl?.length) {
     for (const d of playResult.durl) {
       streams.push({
-        quality, duration,
+        quality, duration: pageDuration,
         format: d.url.includes('.m3u8') ? 'm3u8' : d.url.includes('.flv') ? 'flv' : 'mp4',
         codec: 'avc',
         url: d.url,
@@ -90,7 +95,7 @@ export async function parseVideo(videoId, options = {}) {
   return {
     platform: 'bilibili', type: 'video',
     meta: {
-      id: bvid, title, cover, author, duration, cid,
+      id: bvid, title: pageTitle, cover, author, duration: pageDuration, cid,
       pages: pages.map(p => ({ cid: p.cid, title: p.part || '', duration: p.duration || 0 })),
       qualityOptions: (playResult.accept_quality || []).map((qn, i) => ({
         raw: qn, label: bilibiliQuality(qn), description: (playResult.accept_description || [])[i] || bilibiliQuality(qn),
@@ -98,6 +103,107 @@ export async function parseVideo(videoId, options = {}) {
     },
     streams,
   };
+}
+
+export async function parsePlaylist(playlist, options = {}) {
+  const { cookie = '', resolverPrefix = '' } = options;
+  const entries = await fetchPlaylistEntries(playlist, cookie);
+  if (!entries.length) throw new Error(`Bilibili playlist is empty or unavailable: ${playlist.id}`);
+  return {
+    platform: 'bilibili',
+    type: 'playlist',
+    meta: { id: playlist.id, title: playlist.title || `Bilibili ${playlist.kind || 'playlist'} ${playlist.id}`, author: playlist.author || '', cover: '', duration: 0 },
+    playlist: entries.map((entry, index) => {
+      const source = `https://www.bilibili.com/video/${entry.bvid}${entry.page && entry.page > 1 ? `?p=${entry.page}` : ''}`;
+      return {
+        id: entry.bvid,
+        title: entry.title || `\u89c6\u9891 ${index + 1}`,
+        sourceUrl: source,
+        url: resolverUrl(source, resolverPrefix),
+        cover: entry.cover || '',
+        duration: Number(entry.duration) || 0,
+      };
+    }),
+  };
+}
+
+async function fetchPlaylistEntries(playlist, cookie) {
+  const requests = [];
+  let mid = playlist.mid || '';
+  if (!mid && playlist.bvid) {
+    try {
+      const response = await fetchWithRetry(`https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(playlist.bvid)}`, { platform: 'bilibili', cookie });
+      mid = String((await response.json())?.data?.owner?.mid || '');
+    } catch {
+      // Collection endpoints below will report the actual failure.
+    }
+  }
+  if (playlist.kind === 'favorite') {
+    requests.push({
+      pageSize: 100,
+      buildUrl: (page) => `https://api.bilibili.com/x/v3/fav/resource/list?media_id=${encodeURIComponent(playlist.id)}&pn=${page}&ps=100&platform=web`,
+    });
+  } else if (mid) {
+    if (playlist.kind !== 'series') {
+      requests.push({
+        pageSize: 100,
+        buildUrl: (page) => `https://api.bilibili.com/x/polymer/web-space/seasons_archives_list?mid=${encodeURIComponent(mid)}&season_id=${encodeURIComponent(playlist.id)}&sort_reverse=false&pn=${page}&ps=100`,
+      });
+      requests.push({
+        pageSize: 100,
+        buildUrl: (page) => `https://api.bilibili.com/x/space/season/archives?mid=${encodeURIComponent(mid)}&season_id=${encodeURIComponent(playlist.id)}&sort_reverse=false&pn=${page}&ps=100`,
+      });
+    }
+    if (playlist.kind !== 'season') {
+      requests.push({
+        pageSize: 100,
+        buildUrl: (page) => `https://api.bilibili.com/x/series/archives?mid=${encodeURIComponent(mid)}&series_id=${encodeURIComponent(playlist.id)}&pn=${page}&ps=100`,
+      });
+    }
+  }
+  for (const request of requests) {
+    const entries = [];
+    const seen = new Set();
+    try {
+      for (let page = 1; page <= 100; page += 1) {
+        const response = await fetchWithRetry(request.buildUrl(page), { platform: 'bilibili', cookie });
+        const body = await response.json();
+        if (body?.code && body.code !== 0) break;
+        const data = body?.data || {};
+        const list = data.archives || data.items || data.medias || data.resources || [];
+        for (const item of list) {
+          const entry = {
+            bvid: item.bvid || item.bv_id || item.arc?.bvid || '',
+            title: item.title || item.arc?.title || item.name || '',
+            cover: item.pic || item.cover || item.arc?.pic || '',
+            duration: item.duration || item.arc?.duration || 0,
+          };
+          if (!entry.bvid || seen.has(entry.bvid)) continue;
+          seen.add(entry.bvid);
+          entries.push(entry);
+        }
+        if (!hasMorePlaylistPages(data, list.length, entries.length, request.pageSize)) break;
+      }
+      if (entries.length) return entries;
+    } catch {
+      // Try the next public Bilibili collection endpoint.
+    }
+  }
+  return [];
+}
+
+function hasMorePlaylistPages(data, pageLength, loadedLength, pageSize) {
+  const explicit = data.has_more ?? data.hasMore;
+  if (typeof explicit === 'boolean') return explicit;
+  if (typeof explicit === 'number') return explicit !== 0;
+  const total = Number(data.page?.total ?? data.info?.media_count ?? data.total ?? 0);
+  if (Number.isFinite(total) && total > 0) return loadedLength < total;
+  return pageLength >= pageSize;
+}
+
+function resolverUrl(source, prefix) {
+  if (!prefix) return source;
+  return `${prefix}${encodeURIComponent(source)}`;
 }
 
 // ---- Parse live ----

@@ -26,6 +26,7 @@ module.exports = {
       YT_DLP_PATH: process.env.YT_DLP_PATH || '',
       GENERIC_RESOLVER_TIMEOUT_MS: process.env.GENERIC_RESOLVER_TIMEOUT_MS || '',
       GENERIC_RESOLVER_MAX_CONCURRENT: process.env.GENERIC_RESOLVER_MAX_CONCURRENT || '',
+      PLAYLIST_RESOLVER_PREFIX: process.env.PLAYLIST_RESOLVER_PREFIX || '',
       TRUST_PROXY: process.env.TRUST_PROXY || '',
     },
     log_date_format: 'YYYY-MM-DD HH:mm:ss',

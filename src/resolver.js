@@ -1,7 +1,7 @@
 import { AppError } from './errors.js';
-import { parseLive, parseVideo } from './platforms/bilibili.js';
+import { parseLive, parsePlaylist as parseBilibiliPlaylist, parseVideo } from './platforms/bilibili.js';
 import { parseGenericVideo } from './platforms/generic.js';
-import { parseMv, parseSong } from './platforms/netease.js';
+import { parseMv, parsePlaylist as parseNeteasePlaylist, parseSong } from './platforms/netease.js';
 import { parseShortVideo } from './platforms/short-video.js';
 import { qualityRank } from './utils/quality.js';
 import { expandShortLink, extractId, identifyPlatform, normalizeSourceUrl } from './utils/url.js';
@@ -30,7 +30,7 @@ export async function resolveMedia(rawUrl, options = {}) {
       throw new AppError(401, 'generic_auth_required', 'Generic resolver requires a valid API key');
     }
     try {
-      return normalizeResult(await parseGenericVideo(target, generic), authenticated);
+      return normalizeResult(await parseGenericVideo(target, generic), authenticated, { resolverPrefix: options.resolverPrefix || '' });
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw new AppError(502, 'upstream_error', error.message);
@@ -53,11 +53,11 @@ export async function resolveMedia(rawUrl, options = {}) {
 
   const cookie = cookies[platform] || '';
   try {
-    const result = await parsePlatform(platform, extracted, { cookie, quality, sourceUrl: target });
-    if (!result.streams?.some((stream) => stream.url)) {
+    const result = await parsePlatform(platform, extracted, { cookie, quality, sourceUrl: target, resolverPrefix: options.resolverPrefix || '' });
+    if (!result.playlist?.length && !result.streams?.some((stream) => stream.url)) {
       throw new Error('No playable streams found');
     }
-    return normalizeResult(result, authenticated);
+    return normalizeResult(result, authenticated, { resolverPrefix: options.resolverPrefix || '' });
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AppError(502, 'upstream_error', error.message);
@@ -104,10 +104,15 @@ export function selectPlayableStream(result, targetQuality) {
 }
 
 async function parsePlatform(platform, extracted, options) {
+  if (extracted.type === 'playlist') {
+    return platform === 'bilibili'
+      ? parseBilibiliPlaylist(extracted, options)
+      : parseNeteasePlaylist(extracted, options);
+  }
   if (platform === 'bilibili') {
     return extracted.type === 'live'
       ? parseLive(extracted.id, options)
-      : parseVideo(extracted.id, options);
+      : parseVideo(extracted.id, { ...options, page: extracted.page });
   }
   if (platform === 'douyin' || platform === 'kuaishou') {
     return parseShortVideo(platform, options.sourceUrl, { ...options, id: extracted.id });
@@ -117,9 +122,9 @@ async function parsePlatform(platform, extracted, options) {
     : parseSong(extracted.id, options);
 }
 
-function normalizeResult(result, authenticated) {
+function normalizeResult(result, authenticated, options = {}) {
   const meta = result.meta || {};
-  const streams = result.streams
+  const streams = (result.streams || [])
     .filter((stream) => stream.url)
     .map(normalizeStream);
   const qualities = [];
@@ -155,6 +160,25 @@ function normalizeResult(result, authenticated) {
       title: part.title || '',
       duration: part.duration || 0,
     }));
+  }
+
+  if (Array.isArray(result.playlist)) {
+    normalized.playlist = result.playlist.map((item) => ({
+      id: String(item.id || ''),
+      title: item.title || '',
+      url: item.url || item.sourceUrl || '',
+      sourceUrl: item.sourceUrl || '',
+      cover: item.cover || '',
+      duration: Number(item.duration) || 0,
+    })).filter((item) => item.url);
+  }
+  if (result.platform === 'bilibili' && meta.pages?.length > 1) {
+    const base = `https://www.bilibili.com/video/${normalized.id}`;
+    normalized.playlist = meta.pages.map((page, index) => {
+      const sourceUrl = `${base}?p=${index + 1}`;
+      const url = options.resolverPrefix ? `${options.resolverPrefix}${encodeURIComponent(sourceUrl)}` : sourceUrl;
+      return { id: `${normalized.id}:${index + 1}`, title: page.title || `P${index + 1}`, url, sourceUrl, cover: normalized.cover, duration: Number(page.duration) || 0 };
+    });
   }
 
   return normalized;
