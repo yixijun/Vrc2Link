@@ -65,6 +65,12 @@ async function dispatchRequest(request, dependencies, context) {
     if (url.pathname === '/danmaku/current' || isCurrentDanmakuApi(url)) {
       return await handleDanmakuRequest(url, dependencies);
     }
+    if (isCurrentPlaylistApi(url)) {
+      return await handleCurrentPlaylistRequest(dependencies, context);
+    }
+    if (isPlaylistItemRequest(url)) {
+      return await handlePlaylistItemRequest(url, dependencies, context);
+    }
     if (url.pathname !== '/api' && url.pathname !== '/play' && url.pathname !== '/playlist') {
       throw new AppError(404, 'not_found', 'Endpoint not found');
     }
@@ -111,6 +117,9 @@ async function dispatchRequest(request, dependencies, context) {
     context.platform = result.platform || null;
 
     if (url.pathname === '/play' && result.playlist) {
+      bindPlaylistSession({
+        state, env, clientIp: dependencies.clientIp || 'unknown', rawUrl, authenticated, result,
+      });
       const entries = result.playlist.map((item) => ({ url: item.url, title: item.title, playerIndex: 1 }));
       return jsonResponse({ [result.title || 'Playlist']: entries }, {
         headers: { ...rateLimitHeaders, ...(cacheKey ? { 'X-Cache': cacheHit ? 'HIT' : 'MISS' } : {}) },
@@ -146,6 +155,11 @@ async function dispatchRequest(request, dependencies, context) {
     }
 
     const stream = selectPlayableStream(result, quality);
+    if (url.pathname === '/play') {
+      bindPlaylistSession({
+        state, env, clientIp: dependencies.clientIp || 'unknown', rawUrl, authenticated,
+      });
+    }
     bindDanmakuSession({
       state,
       env,
@@ -217,6 +231,173 @@ function isCurrentDanmakuApi(url) {
   return url.pathname === '/api' &&
     url.searchParams.get('danmaku') === '1' &&
     !url.searchParams.has('url');
+}
+
+function isCurrentPlaylistApi(url) {
+  return url.pathname === '/api' &&
+    url.searchParams.get('playlist') === '1' &&
+    !url.searchParams.has('url');
+}
+
+function isPlaylistItemRequest(url) {
+  return url.pathname === '/api' && url.searchParams.has('playlistItem') && !url.searchParams.has('url');
+}
+
+async function handleCurrentPlaylistRequest(dependencies, context) {
+  const env = dependencies.env || process.env;
+  const state = dependencies.state;
+  if (!state) throw new AppError(503, 'state_unavailable', 'Playlist state is unavailable');
+
+  const clientIp = dependencies.clientIp || 'unknown';
+  const rateLimitHeaders = enforceDanmakuRateLimit({ state, env, clientIp });
+  const sessionKey = playlistSessionKey(clientIp);
+  const session = state.getJson(sessionKey);
+  if (!session || !session.sourceUrl) {
+    throw new AppError(409, 'no_playlist_session', 'Play a playlist-capable URL through /play first');
+  }
+
+  let result = session.result;
+  if (!result?.playlist) {
+    const resolve = dependencies.resolve || resolveMedia;
+    result = await resolve(session.sourceUrl, {
+      authenticated: session.authenticated === true,
+      cookies: cookiesForAuthentication(session.authenticated === true, env),
+      generic: genericOptions(env),
+      playlistMode: true,
+      resolverPrefix: env.PLAYLIST_RESOLVER_PREFIX || 'https://vrc2link.luonako.cn/play?url=',
+    });
+    if (!result?.playlist) {
+      throw new AppError(422, 'not_a_playlist', 'The current media does not expose a playlist');
+    }
+    session.result = result;
+    state.setJson(sessionKey, session, playlistSessionTtl(env));
+  }
+  context.platform = result.platform || null;
+  return jsonResponse(playlistManifest(result, session), { headers: rateLimitHeaders });
+}
+
+async function handlePlaylistItemRequest(url, dependencies, context) {
+  const env = dependencies.env || process.env;
+  const state = dependencies.state;
+  if (!state) throw new AppError(503, 'state_unavailable', 'Playlist state is unavailable');
+
+  const clientIp = dependencies.clientIp || 'unknown';
+  const session = state.getJson(playlistSessionKey(clientIp));
+  if (!session?.result?.playlist) {
+    throw new AppError(409, 'no_playlist_session', 'Load the current playlist manifest before selecting an item');
+  }
+  const index = Number.parseInt(url.searchParams.get('playlistItem'), 10);
+  if (!Number.isInteger(index) || index < 0 || index >= session.result.playlist.length) {
+    throw new AppError(400, 'invalid_playlist_item', 'playlistItem is outside the current playlist');
+  }
+  session.result.currentIndex = index;
+  session.autoPlay = false;
+  state.setJson(playlistSessionKey(clientIp), session, playlistSessionTtl(env));
+  const rateLimitHeaders = enforceDanmakuRateLimit({ state, env, clientIp });
+  return resolvePlaylistItemResponse(
+    session.result,
+    index,
+    {
+      ...dependencies,
+      env,
+      resolve: dependencies.resolve || resolveMedia,
+      authenticated: session.authenticated === true,
+    },
+    context,
+    rateLimitHeaders,
+  );
+}
+
+async function resolvePlaylistItemResponse(playlistResult, index, dependencies, context, headers = {}) {
+  const entry = playlistResult.playlist[index];
+  const sourceUrl = playlistEntrySource(entry);
+  if (!sourceUrl) throw new AppError(422, 'invalid_playlist_item', 'Playlist item has no playable source URL');
+  const env = dependencies.env || process.env;
+  const result = await dependencies.resolve(sourceUrl, {
+    authenticated: dependencies.authenticated === true,
+    cookies: cookiesForAuthentication(dependencies.authenticated === true, env),
+    generic: genericOptions(env),
+    playlistMode: false,
+    resolverPrefix: env.PLAYLIST_RESOLVER_PREFIX || 'https://vrc2link.luonako.cn/play?url=',
+  });
+  const stream = selectPlayableStream(result);
+  context.platform = result.platform || playlistResult.platform || null;
+  bindDanmakuSession({
+    state: dependencies.state,
+    env,
+    clientIp: dependencies.clientIp || 'unknown',
+    rawUrl: sourceUrl,
+    result,
+  });
+  return withCommonHeaders(new Response(null, {
+    status: 302,
+    headers: {
+      Location: stream.url,
+      'X-Stream-Quality': stream.quality,
+      'X-Stream-Format': stream.format,
+      'Referrer-Policy': 'no-referrer',
+      'Cache-Control': 'no-store',
+      ...headers,
+    },
+  }));
+}
+
+function bindPlaylistSession({ state, env, clientIp, rawUrl, authenticated, result }) {
+  if (!state) return;
+  const sourceUrl = normalizeSourceUrl(rawUrl || '');
+  if (!sourceUrl) return;
+  state.setJson(playlistSessionKey(clientIp), {
+    sourceUrl,
+    authenticated: authenticated === true,
+    autoPlay: Boolean(result?.playlist),
+    ...(result?.playlist ? { result } : {}),
+  }, playlistSessionTtl(env));
+}
+
+function playlistManifest(result, session) {
+  const playlist = result.playlist || [];
+  return {
+    type: 'playlist',
+    title: result.meta?.title || result.title || 'Playlist',
+    count: playlist.length,
+    currentIndex: normalizePlaylistIndex(result.currentIndex, playlist.length),
+    autoPlay: session?.autoPlay === true,
+    entries: playlist.map((entry, index) => ({ title: entry.title || `Item ${index + 1}` })),
+  };
+}
+
+function playlistEntrySource(entry) {
+  if (entry?.sourceUrl) return entry.sourceUrl;
+  if (!entry?.url) return '';
+  try {
+    return new URL(entry.url).searchParams.get('url') || entry.url;
+  } catch {
+    return entry.url;
+  }
+}
+
+function normalizePlaylistIndex(value, length) {
+  if (length <= 0) return 0;
+  const index = Number.parseInt(value, 10);
+  return Number.isInteger(index) && index >= 0 && index < length ? index : 0;
+}
+
+function cookiesForAuthentication(authenticated, env) {
+  if (!authenticated) return {};
+  return Object.fromEntries([
+    ['bilibili', env.BILIBILI_COOKIE],
+    ['netease', env.NETEASE_COOKIE],
+    ['douyin', env.DOUYIN_COOKIE],
+    ['kuaishou', env.KUAISHOU_COOKIE],
+  ].filter(([, value]) => value));
+}
+
+function playlistSessionKey(clientIp) {
+  return `playlist:session:${hashIdentity(clientIp)}`;
+}
+
+function playlistSessionTtl(env) {
+  return positiveInteger(env.PLAYLIST_SESSION_TTL_SECONDS, 21600);
 }
 
 function bindDanmakuSession({ state, env, clientIp, rawUrl, result }) {

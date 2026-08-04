@@ -27,6 +27,7 @@ module.exports = {
       GENERIC_RESOLVER_TIMEOUT_MS: process.env.GENERIC_RESOLVER_TIMEOUT_MS || '',
       GENERIC_RESOLVER_MAX_CONCURRENT: process.env.GENERIC_RESOLVER_MAX_CONCURRENT || '',
       PLAYLIST_RESOLVER_PREFIX: process.env.PLAYLIST_RESOLVER_PREFIX || '',
+      PLAYLIST_SESSION_TTL_SECONDS: process.env.PLAYLIST_SESSION_TTL_SECONDS || '21600',
       TRUST_PROXY: process.env.TRUST_PROXY || '',
     },
     log_date_format: 'YYYY-MM-DD HH:mm:ss',

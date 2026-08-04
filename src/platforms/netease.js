@@ -79,6 +79,7 @@ export async function parsePlaylist(playlist, options = {}) {
   return {
     platform: 'netease',
     type: 'playlist',
+    currentIndex: 0,
     meta: { id: playlist.id, title: data.name || `\u7f51\u6613\u4e91\u6b4c\u5355 ${playlist.id}`, author: data.creator?.nickname || '', cover: data.coverImgUrl || '', duration: 0 },
     playlist: tracks.map((track, index) => {
       const source = `https://music.163.com/song?id=${track.id}`;

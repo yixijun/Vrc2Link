@@ -57,6 +57,7 @@ export async function parseVideo(videoId, options = {}) {
     if (entries.length) {
       return {
         platform: 'bilibili', type: 'playlist',
+        currentIndex: entries.findIndex((entry) => entry.id === bvid),
         meta: {
           id: String(season.id || bvid),
           title: season.title || title,
@@ -150,6 +151,7 @@ export async function parsePlaylist(playlist, options = {}) {
   return {
     platform: 'bilibili',
     type: 'playlist',
+    currentIndex: 0,
     meta: { id: playlist.id, title: playlist.title || `Bilibili ${playlist.kind || 'playlist'} ${playlist.id}`, author: playlist.author || '', cover: '', duration: 0 },
     playlist: entries.map((entry, index) => {
       const source = `https://www.bilibili.com/video/${entry.bvid}${entry.page && entry.page > 1 ? `?p=${entry.page}` : ''}`;

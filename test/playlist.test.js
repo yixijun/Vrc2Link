@@ -88,6 +88,7 @@ test('Bilibili video exposes its UGC season when playlist mode is requested', as
   assert.equal(result.meta.title, 'Season fixture');
   assert.deepEqual(result.playlist.map((item) => item.id), ['BVepisode1', 'BVepisode2']);
   assert.match(result.playlist[1].url, /BVepisode2$/);
+  assert.equal(result.currentIndex, -1);
 });
 
 test('Netease playlist parser returns songs in order', async (t) => {
@@ -156,21 +157,112 @@ test('Netease playlist parser accepts the public result response shape', async (
 });
 
 
-test('/play returns VizVid dynamic playlist JSON for playlist results', async () => {
+test('/play keeps VizVid playlist JSON while fixed API endpoints expose and play the current list', async () => {
+  const state = createMemoryState();
+  const resolvedUrls = [];
+  const resolve = async (url) => {
+    resolvedUrls.push(url);
+    if (url.includes('/playlist?')) {
+      return {
+        platform: 'netease',
+        type: 'playlist',
+        title: 'Fixture playlist',
+        currentIndex: 0,
+        playlist: [
+          { title: 'Track 1', sourceUrl: 'https://music.163.com/song?id=1', url: 'https://vrc2link.example/play?url=song-1' },
+          { title: 'Track 2', sourceUrl: 'https://music.163.com/song?id=2', url: 'https://vrc2link.example/play?url=song-2' },
+        ],
+      };
+    }
+    const id = new URL(url).searchParams.get('id');
+    return {
+      platform: 'netease', type: 'song', id,
+      streams: [{ quality: '320k', format: 'mp3', codec: 'mp3', url: `https://cdn.example/${id}.mp3` }],
+    };
+  };
   const response = await handleRequest(
     new Request('http://localhost/play?url=https%3A%2F%2Fmusic.163.com%2Fplaylist%3Fid%3D789'),
-    { resolve: async () => ({
-      platform: 'netease',
-      type: 'playlist',
-      title: 'Fixture playlist',
-      playlist: [{ title: 'Track 1', url: 'https://vrc2link.example/play?url=song-1' }],
-    }) },
+    { state, resolve, clientIp: '203.0.113.10' },
   );
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('content-type'), 'application/json; charset=utf-8');
   assert.deepEqual(await response.json(), {
-    'Fixture playlist': [{ title: 'Track 1', url: 'https://vrc2link.example/play?url=song-1', playerIndex: 1 }],
+    'Fixture playlist': [
+      { title: 'Track 1', url: 'https://vrc2link.example/play?url=song-1', playerIndex: 1 },
+      { title: 'Track 2', url: 'https://vrc2link.example/play?url=song-2', playerIndex: 1 },
+    ],
   });
+
+  const manifestResponse = await handleRequest(
+    new Request('http://localhost/api?playlist=1'),
+    { state, resolve, clientIp: '203.0.113.10' },
+  );
+  assert.equal(manifestResponse.status, 200);
+  assert.deepEqual(await manifestResponse.json(), {
+    type: 'playlist', title: 'Fixture playlist', count: 2, currentIndex: 0, autoPlay: true,
+    entries: [{ title: 'Track 1' }, { title: 'Track 2' }],
+  });
+
+  const itemResponse = await handleRequest(
+    new Request('http://localhost/api?playlistItem=1'),
+    { state, resolve, clientIp: '203.0.113.10' },
+  );
+  assert.equal(itemResponse.status, 302);
+  assert.equal(itemResponse.headers.get('location'), 'https://cdn.example/2.mp3');
+  assert.deepEqual(resolvedUrls, [
+    'https://music.163.com/playlist?id=789',
+    'https://music.163.com/song?id=2',
+  ]);
+
+  const updatedManifestResponse = await handleRequest(
+    new Request('http://localhost/api?playlist=1'),
+    { state, resolve, clientIp: '203.0.113.10' },
+  );
+  assert.equal(updatedManifestResponse.status, 200);
+  assert.deepEqual(await updatedManifestResponse.json(), {
+    type: 'playlist', title: 'Fixture playlist', count: 2, currentIndex: 1, autoPlay: false,
+    entries: [{ title: 'Track 1' }, { title: 'Track 2' }],
+  });
+});
+
+test('a played Bilibili video lazily exposes its UGC season without replacing playback', async () => {
+  const state = createMemoryState();
+  const playlistModes = [];
+  const resolve = async (_url, options) => {
+    playlistModes.push(options.playlistMode);
+    if (options.playlistMode) {
+      return {
+        platform: 'bilibili', type: 'playlist', meta: { title: 'Season fixture' }, currentIndex: 1,
+        playlist: [
+          { title: 'Episode 1', sourceUrl: 'https://www.bilibili.com/video/BVepisode1' },
+          { title: 'Episode 2', sourceUrl: 'https://www.bilibili.com/video/BVepisode2' },
+        ],
+      };
+    }
+    return {
+      platform: 'bilibili', type: 'video', id: 'BVepisode2',
+      streams: [{ quality: '720p', format: 'mp4', codec: 'avc', url: 'https://cdn.example/current.mp4' }],
+    };
+  };
+  const source = encodeURIComponent('https://www.bilibili.com/video/BVepisode2');
+
+  const playResponse = await handleRequest(
+    new Request(`http://localhost/play?url=${source}`),
+    { state, resolve, clientIp: '203.0.113.11' },
+  );
+  assert.equal(playResponse.status, 302);
+  assert.equal(playResponse.headers.get('location'), 'https://cdn.example/current.mp4');
+
+  const manifestResponse = await handleRequest(
+    new Request('http://localhost/api?playlist=1'),
+    { state, resolve, clientIp: '203.0.113.11' },
+  );
+  assert.equal(manifestResponse.status, 200);
+  assert.deepEqual(await manifestResponse.json(), {
+    type: 'playlist', title: 'Season fixture', count: 2, currentIndex: 1, autoPlay: false,
+    entries: [{ title: 'Episode 1' }, { title: 'Episode 2' }],
+  });
+  assert.deepEqual(playlistModes, [false, true]);
 });
 
 test('/playlist returns normalized playlist data for the Unity editor importer', async () => {

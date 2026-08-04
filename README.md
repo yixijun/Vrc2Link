@@ -31,6 +31,7 @@ RATE_LIMIT_IP_PER_MINUTE=120
 RATE_LIMIT_WINDOW_SECONDS=60
 TRUST_PROXY=false
 PLAYLIST_RESOLVER_PREFIX=https://vrc2link.luonako.cn/play?url=
+PLAYLIST_SESSION_TTL_SECONDS=21600
 ```
 
 Cookie 不需要挑选字段。在已登录的平台页面打开开发者工具，进入 Network，刷新页面，选择一个同平台请求，在 Request Headers 中复制完整的 `Cookie` 值，然后直接粘贴到对应等号后面。
@@ -102,6 +103,7 @@ GENERIC_RESOLVER_MAX_CONCURRENT=2
 | `YT_DLP_PATH` | `yt-dlp` 命令或绝对路径 |
 | `GENERIC_RESOLVER_TIMEOUT_MS` | 单次通用解析超时毫秒数，默认 `20000` |
 | `GENERIC_RESOLVER_MAX_CONCURRENT` | 通用解析最大并发进程数，默认 `2` |
+| `PLAYLIST_SESSION_TTL_SECONDS` | 合集/歌单会话保留秒数，默认 `21600` |
 | `TRUST_PROXY` | 是否信任代理 IP 请求头，默认 `false` |
 
 修改配置后需要重启服务。不传 `key` 时使用匿名解析；传入正确的 `key` 时才会使用服务器 Cookie；错误的 `key` 返回 `401`。
@@ -168,6 +170,17 @@ Bilibili 的 1080p、4K、8K 通常是 DASH 音视频分离流，而 `/play` 只
 ```
 
 VRChat 当前没有向 Udon 开放运行时创建 `VRCUrl` 的能力，因此该接口供 Unity 编辑器在上传世界前导入列表。普通 `/play` 对单个视频或歌曲仍返回 `302`；传入播放列表时返回 VizVid 动态列表 JSON，供未来 SDK 开放该能力后使用。
+
+### VRChat 固定合集接口
+
+Unity 中的独立“合集 / 歌单”面板使用两个不需要运行时拼接 `VRCUrl` 的固定接口：
+
+```text
+/api?playlist=1
+/api?playlistItem=0
+```
+
+玩家先通过 `/play` 打开 Bilibili 视频、Bilibili 合集或网易云歌单。服务器按客户端 IP 保存最近的合集会话；`playlist=1` 返回标题、条目名称、当前索引和 `autoPlay`，`playlistItem=N` 解析第 N 项并返回 `302`。直接打开合集/歌单时 `autoPlay=true`，从正在播放的 Bilibili 视频发现合集时为 `false`，不会打断当前视频。
 
 ## 安全
 
