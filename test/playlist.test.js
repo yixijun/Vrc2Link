@@ -135,6 +135,70 @@ test('Netease playlist parser fetches track details omitted from playlist respon
   assert.deepEqual(result.playlist.map((item) => item.id), ['1', '2']);
 });
 
+test('Netease playlist parser uses the v6 endpoint to retrieve every track ID', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    requestedUrls.push(url);
+    if (url.includes('/api/v6/playlist/detail')) {
+      return Response.json({ playlist: {
+        name: 'Complete playlist fixture',
+        tracks: Array.from({ length: 10 }, (_, index) => ({
+          id: index + 1,
+          name: `Track ${index + 1}`,
+          dt: 1000,
+        })),
+        trackIds: Array.from({ length: 11 }, (_, index) => ({ id: index + 1 })),
+      } });
+    }
+    assert.match(url, /song\/detail/);
+    return Response.json({ songs: [{ id: 11, name: 'Track 11', dt: 1000 }] });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const result = await parseNeteasePlaylist(
+    { id: '2481925967' },
+    { resolverPrefix: 'https://vrc2link.example/play?url=' },
+  );
+
+  assert.match(requestedUrls[0], /\/api\/v6\/playlist\/detail/);
+  assert.equal(result.playlist.length, 11);
+  assert.equal(result.playlist[10].id, '11');
+});
+
+test('Netease playlist parser hydrates large playlists in batches of at most 200 songs', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const trackIds = Array.from({ length: 401 }, (_, index) => ({ id: index + 1 }));
+  const batchSizes = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.includes('/api/v6/playlist/detail')) {
+      return Response.json({ playlist: {
+        name: 'Large playlist fixture',
+        tracks: [],
+        trackIds,
+      } });
+    }
+    const ids = JSON.parse(new URL(url).searchParams.get('ids'));
+    batchSizes.push(ids.length);
+    if (ids.length > 200) return Response.json({ code: 400, message: 'request too large' });
+    return Response.json({
+      code: 200,
+      songs: ids.map((id) => ({ id, name: `Track ${id}`, dt: 1000 })),
+    });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const result = await parseNeteasePlaylist(
+    { id: '2481925967' },
+    { resolverPrefix: 'https://vrc2link.example/play?url=' },
+  );
+
+  assert.deepEqual(batchSizes, [200, 200, 1]);
+  assert.equal(result.playlist.length, 401);
+});
+
 test('Netease playlist parser accepts the public result response shape', async (t) => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {

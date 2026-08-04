@@ -71,7 +71,7 @@ export async function parseSong(songId, options = {}) {
 
 export async function parsePlaylist(playlist, options = {}) {
   const { cookie = '', resolverPrefix = '' } = options;
-  const detail = await fetchJson(`https://music.163.com/api/playlist/detail?id=${encodeURIComponent(playlist.id)}&limit=1000&offset=0`, { cookie });
+  const detail = await fetchJson(`https://music.163.com/api/v6/playlist/detail?id=${encodeURIComponent(playlist.id)}&n=1000&s=8`, { cookie });
   const data = detail?.playlist || detail?.result;
   if (!data) throw new Error(`Netease playlist not found: ${playlist.id}`);
   const tracks = await hydratePlaylistTracks(data, cookie);
@@ -102,8 +102,8 @@ async function hydratePlaylistTracks(playlist, cookie) {
 
   const byId = new Map(tracks.map((track) => [String(track.id), track]));
   const missing = trackIds.filter((id) => !byId.has(id));
-  for (let offset = 0; offset < missing.length; offset += 500) {
-    const ids = missing.slice(offset, offset + 500);
+  for (let offset = 0; offset < missing.length; offset += 200) {
+    const ids = missing.slice(offset, offset + 200);
     try {
       const detail = await fetchJson(
         `https://music.163.com/api/song/detail?ids=${encodeURIComponent(JSON.stringify(ids))}`,
