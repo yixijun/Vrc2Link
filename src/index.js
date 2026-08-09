@@ -101,6 +101,11 @@ async function dispatchRequest(request, dependencies, context) {
       normalizeSourceUrl(rawUrl || '', { allowGeneric: generic.enabled }),
       { allowGeneric: generic.enabled },
     ) || null;
+    const playlistSessionId = url.pathname === '/play'
+      ? beginPlaylistSession({
+          state, env, clientIp: dependencies.clientIp || 'unknown', rawUrl, authenticated,
+        })
+      : undefined;
     const cacheKey = !authenticated && state
       ? mediaCacheKey(rawUrl, quality, generic.enabled, playlistMode)
       : undefined;
@@ -119,6 +124,7 @@ async function dispatchRequest(request, dependencies, context) {
     if (url.pathname === '/play' && result.playlist) {
       bindPlaylistSession({
         state, env, clientIp: dependencies.clientIp || 'unknown', rawUrl, authenticated, result,
+        sessionId: playlistSessionId,
       });
       const entries = result.playlist.map((item) => ({ url: item.url, title: item.title, playerIndex: 1 }));
       return jsonResponse({ [result.title || 'Playlist']: entries }, {
@@ -158,6 +164,7 @@ async function dispatchRequest(request, dependencies, context) {
     if (url.pathname === '/play') {
       bindPlaylistSession({
         state, env, clientIp: dependencies.clientIp || 'unknown', rawUrl, authenticated,
+        sessionId: playlistSessionId,
       });
     }
     bindDanmakuSession({
@@ -255,6 +262,9 @@ async function handleCurrentPlaylistRequest(dependencies, context) {
   if (!session || !session.sourceUrl) {
     throw new AppError(409, 'no_playlist_session', 'Play a playlist-capable URL through /play first');
   }
+  if (session.pending) {
+    throw new AppError(409, 'playlist_session_pending', 'The current media is still being resolved');
+  }
 
   let result = session.result;
   if (!result?.playlist) {
@@ -266,6 +276,10 @@ async function handleCurrentPlaylistRequest(dependencies, context) {
       playlistMode: true,
       resolverPrefix: env.PLAYLIST_RESOLVER_PREFIX || 'https://vrc2link.luonako.cn/play?url=',
     });
+    const currentSession = state.getJson(sessionKey);
+    if (currentSession?.sessionId !== session.sessionId) {
+      throw new AppError(409, 'playlist_session_changed', 'The current media changed while its playlist was loading');
+    }
     if (!result?.playlist) {
       throw new AppError(422, 'not_a_playlist', 'The current media does not expose a playlist');
     }
@@ -342,14 +356,34 @@ async function resolvePlaylistItemResponse(playlistResult, index, dependencies, 
   }));
 }
 
-function bindPlaylistSession({ state, env, clientIp, rawUrl, authenticated, result }) {
+function beginPlaylistSession({ state, env, clientIp, rawUrl, authenticated }) {
   if (!state) return;
   const sourceUrl = normalizeSourceUrl(rawUrl || '');
   if (!sourceUrl) return;
+  const sessionId = randomUUID();
   state.setJson(playlistSessionKey(clientIp), {
     sourceUrl,
     authenticated: authenticated === true,
+    autoPlay: false,
+    pending: true,
+    sessionId,
+  }, playlistSessionTtl(env));
+  return sessionId;
+}
+
+function bindPlaylistSession({ state, env, clientIp, rawUrl, authenticated, result, sessionId }) {
+  if (!state) return;
+  const sourceUrl = normalizeSourceUrl(rawUrl || '');
+  if (!sourceUrl) return;
+  const sessionKey = playlistSessionKey(clientIp);
+  const current = state.getJson(sessionKey);
+  if (sessionId && current?.sessionId !== sessionId) return;
+  state.setJson(sessionKey, {
+    sourceUrl,
+    authenticated: authenticated === true,
     autoPlay: Boolean(result?.playlist),
+    pending: false,
+    ...(sessionId ? { sessionId } : {}),
     ...(result?.playlist ? { result } : {}),
   }, playlistSessionTtl(env));
 }

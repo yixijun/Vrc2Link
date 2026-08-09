@@ -329,6 +329,89 @@ test('a played Bilibili video lazily exposes its UGC season without replacing pl
   assert.deepEqual(playlistModes, [false, true]);
 });
 
+test('a new play request hides the previous playlist while media resolution is pending', async () => {
+  const state = createMemoryState();
+  let releaseNewMedia;
+  const newMediaPending = new Promise((resolve) => { releaseNewMedia = resolve; });
+  const resolve = async (url) => {
+    if (url.includes('old-playlist')) {
+      return {
+        platform: 'bilibili', type: 'playlist', title: 'Old playlist',
+        playlist: [{ title: 'Old item', sourceUrl: 'https://example.com/old-item' }],
+      };
+    }
+    await newMediaPending;
+    return {
+      platform: 'bilibili', type: 'video', id: 'new-video',
+      streams: [{ quality: '720p', format: 'mp4', codec: 'avc', url: 'https://cdn.example/new.mp4' }],
+    };
+  };
+  const dependencies = { state, resolve, clientIp: '203.0.113.12' };
+  await handleRequest(
+    new Request('http://localhost/play?url=https%3A%2F%2Fexample.com%2Fold-playlist'),
+    dependencies,
+  );
+
+  const pendingPlay = handleRequest(
+    new Request('http://localhost/play?url=https%3A%2F%2Fexample.com%2Fnew-video'),
+    dependencies,
+  );
+  await new Promise((resolveNow) => setTimeout(resolveNow, 0));
+  const manifestResponse = await handleRequest(
+    new Request('http://localhost/api?playlist=1'),
+    dependencies,
+  );
+
+  assert.equal(manifestResponse.status, 409);
+  assert.equal((await manifestResponse.json()).error.code, 'playlist_session_pending');
+  releaseNewMedia();
+  await pendingPlay;
+});
+
+test('a slow playlist probe cannot restore a session replaced by newer media', async () => {
+  const state = createMemoryState();
+  let releaseOldPlaylist;
+  const oldPlaylistPending = new Promise((resolve) => { releaseOldPlaylist = resolve; });
+  const resolve = async (url, options) => {
+    if (url.includes('old-video') && options.playlistMode) {
+      await oldPlaylistPending;
+      return {
+        platform: 'bilibili', type: 'playlist', title: 'Stale playlist',
+        playlist: [{ title: 'Stale item', sourceUrl: 'https://example.com/stale-item' }],
+      };
+    }
+    return {
+      platform: 'bilibili', type: 'video', id: url.includes('new-video') ? 'new-video' : 'old-video',
+      streams: [{ quality: '720p', format: 'mp4', codec: 'avc', url: 'https://cdn.example/video.mp4' }],
+    };
+  };
+  const dependencies = { state, resolve, clientIp: '203.0.113.13' };
+  await handleRequest(
+    new Request('http://localhost/play?url=https%3A%2F%2Fexample.com%2Fold-video'),
+    dependencies,
+  );
+  const staleManifest = handleRequest(
+    new Request('http://localhost/api?playlist=1'),
+    dependencies,
+  );
+  await new Promise((resolveNow) => setTimeout(resolveNow, 0));
+  await handleRequest(
+    new Request('http://localhost/play?url=https%3A%2F%2Fexample.com%2Fnew-video'),
+    dependencies,
+  );
+  releaseOldPlaylist();
+
+  const staleResponse = await staleManifest;
+  assert.equal(staleResponse.status, 409);
+  assert.equal((await staleResponse.json()).error.code, 'playlist_session_changed');
+  const currentResponse = await handleRequest(
+    new Request('http://localhost/api?playlist=1'),
+    dependencies,
+  );
+  assert.equal(currentResponse.status, 422);
+  assert.equal((await currentResponse.json()).error.code, 'not_a_playlist');
+});
+
 test('/playlist returns normalized playlist data for the Unity editor importer', async () => {
   const response = await handleRequest(
     new Request('http://localhost/playlist?url=https%3A%2F%2Fmusic.163.com%2Fplaylist%3Fid%3D789'),
