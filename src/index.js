@@ -198,7 +198,7 @@ async function dispatchRequest(request, dependencies, context) {
 }
 
 function shouldProxyStream(request, result, env) {
-  if (String(env.QUEST_STREAM_PROXY).toLowerCase() === 'false') return false;
+  if (String(env.QUEST_STREAM_PROXY).toLowerCase() !== 'true') return false;
   const userAgent = request.headers.get('user-agent') || '';
   if (!/android|quest|oculus/i.test(userAgent)) return false;
   return result?.platform === 'bilibili' || result?.platform === 'netease';

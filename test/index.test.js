@@ -303,6 +303,25 @@ test('/play keeps PC clients on the direct redirect path', async () => {
   assert.equal(response.headers.get('location'), 'https://upos.example/video.mp4');
 });
 
+test('/play sends Quest clients directly to the CDN unless stream proxying is enabled', async () => {
+  const response = await handleRequest(
+    new Request(`http://localhost/play?url=${encodeURIComponent(SOURCE_URL)}`, {
+      headers: { 'User-Agent': 'UnityPlayer/2022.3 (Linux; Android 10; Quest 3)' },
+    }),
+    {
+      env: {},
+      resolve: async () => ({
+        ...MEDIA,
+        platform: 'bilibili',
+        streams: [{ quality: '720p', format: 'mp4', url: 'https://upos.example/video.mp4' }],
+      }),
+    },
+  );
+
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get('location'), 'https://upos.example/video.mp4');
+});
+
 test('/play passes YouTube URLs through without upstream parsing', async (t) => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => { throw new Error('YouTube must not be fetched'); };
