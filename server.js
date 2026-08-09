@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
+import { Readable } from 'node:stream';
 
 import { getClientIp } from './src/client-ip.js';
 import { loadConfig } from './src/config.js';
@@ -35,7 +36,11 @@ const server = createServer(async (request, response) => {
       clientIp: getClientIp(headers, request.socket.remoteAddress, trustProxy),
     });
     response.writeHead(webResponse.status, Object.fromEntries(webResponse.headers));
-    response.end(Buffer.from(await webResponse.arrayBuffer()));
+    if (!webResponse.body) {
+      response.end();
+      return;
+    }
+    Readable.fromWeb(webResponse.body).pipe(response);
   } catch (error) {
     console.error(JSON.stringify({
       timestamp: new Date().toISOString(),

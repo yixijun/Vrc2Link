@@ -234,6 +234,75 @@ test('/play redirects to the exact requested quality', async () => {
   assert.equal((await unavailable.json()).error.code, 'quality_unavailable');
 });
 
+test('/play proxies Bilibili streams for Quest clients', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const upstreamUrl = 'https://upos.example/video.mp4?signature=1';
+  const calls = [];
+  globalThis.fetch = async (input, options = {}) => {
+    calls.push({ input: String(input), options });
+    return new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array([0, 1, 2]));
+        controller.close();
+      },
+    }), {
+      status: 206,
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': '3',
+        'Content-Range': 'bytes 0-2/3',
+        'Accept-Ranges': 'bytes',
+      },
+    });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const response = await handleRequest(
+    new Request(`http://localhost/play?url=${encodeURIComponent(SOURCE_URL)}`, {
+      headers: {
+        'User-Agent': 'UnityPlayer/2022.3 (Linux; Android 10; Quest 3)',
+        Range: 'bytes=0-2',
+      },
+    }),
+    {
+      env: { QUEST_STREAM_PROXY: 'true' },
+      resolve: async () => ({
+        ...MEDIA,
+        platform: 'bilibili',
+        streams: [{ quality: '720p', format: 'mp4', url: upstreamUrl }],
+      }),
+    },
+  );
+
+  assert.equal(response.status, 206);
+  assert.equal(response.headers.get('content-type'), 'video/mp4');
+  assert.equal(response.headers.get('content-range'), 'bytes 0-2/3');
+  assert.deepEqual(await response.arrayBuffer(), new Uint8Array([0, 1, 2]).buffer);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].input, upstreamUrl);
+  assert.equal(calls[0].options.headers.get('range'), 'bytes=0-2');
+  assert.equal(calls[0].options.headers.get('referer'), 'https://www.bilibili.com/');
+});
+
+test('/play keeps PC clients on the direct redirect path', async () => {
+  const response = await handleRequest(
+    new Request(`http://localhost/play?url=${encodeURIComponent(SOURCE_URL)}`, {
+      headers: { 'User-Agent': 'UnityPlayer/2022.3 (Windows; Win64; x64)' },
+    }),
+    {
+      env: { QUEST_STREAM_PROXY: 'true' },
+      resolve: async () => ({
+        ...MEDIA,
+        platform: 'bilibili',
+        streams: [{ quality: '720p', format: 'mp4', url: 'https://upos.example/video.mp4' }],
+      }),
+    },
+  );
+
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get('location'), 'https://upos.example/video.mp4');
+});
+
 test('/play passes YouTube URLs through without upstream parsing', async (t) => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => { throw new Error('YouTube must not be fetched'); };

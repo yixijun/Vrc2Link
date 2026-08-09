@@ -174,17 +174,20 @@ async function dispatchRequest(request, dependencies, context) {
       rawUrl,
       result,
     });
+    const streamHeaders = {
+      'X-Stream-Quality': stream.quality,
+      'X-Stream-Format': stream.format,
+      'Referrer-Policy': 'no-referrer',
+      'Cache-Control': 'no-store',
+      ...rateLimitHeaders,
+      ...(cacheKey ? { 'X-Cache': cacheHit ? 'HIT' : 'MISS' } : {}),
+    };
+    if (shouldProxyStream(request, result, env)) {
+      return await proxyStreamResponse(stream, request, streamHeaders, result.platform);
+    }
     return withCommonHeaders(new Response(null, {
       status: 302,
-      headers: {
-        Location: stream.url,
-        'X-Stream-Quality': stream.quality,
-        'X-Stream-Format': stream.format,
-        'Referrer-Policy': 'no-referrer',
-        'Cache-Control': 'no-store',
-        ...rateLimitHeaders,
-        ...(cacheKey ? { 'X-Cache': cacheHit ? 'HIT' : 'MISS' } : {}),
-      },
+      headers: { Location: stream.url, ...streamHeaders },
     }));
   } catch (error) {
     if (error instanceof AppError) {
@@ -192,6 +195,72 @@ async function dispatchRequest(request, dependencies, context) {
     }
     return errorResponse(new AppError(500, 'internal_error', 'Internal server error'));
   }
+}
+
+function shouldProxyStream(request, result, env) {
+  if (String(env.QUEST_STREAM_PROXY).toLowerCase() === 'false') return false;
+  const userAgent = request.headers.get('user-agent') || '';
+  if (!/android|quest|oculus/i.test(userAgent)) return false;
+  return result?.platform === 'bilibili' || result?.platform === 'netease';
+}
+
+async function proxyStreamResponse(stream, request, headers, platform) {
+  const upstreamHeaders = new Headers();
+  for (const name of ['range', 'if-range', 'accept', 'user-agent']) {
+    const value = request.headers.get(name);
+    if (value) upstreamHeaders.set(name, value);
+  }
+  if (platform === 'bilibili') {
+    upstreamHeaders.set('Referer', 'https://www.bilibili.com/');
+    upstreamHeaders.set('Origin', 'https://www.bilibili.com');
+  } else if (platform === 'netease') {
+    upstreamHeaders.set('Referer', 'https://music.163.com/');
+    upstreamHeaders.set('Origin', 'https://music.163.com');
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+  let upstream;
+  try {
+    upstream = await fetch(stream.url, {
+      method: 'GET',
+      headers: upstreamHeaders,
+      redirect: 'follow',
+      signal: controller.signal,
+    });
+  } catch (error) {
+    throw new AppError(502, 'upstream_stream_error', error?.name === 'AbortError'
+      ? 'Upstream stream timed out'
+      : 'Unable to open upstream stream');
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  const responseHeaders = new Headers(headers);
+  for (const name of [
+    'content-type', 'content-length', 'content-range', 'accept-ranges',
+    'etag', 'last-modified', 'expires',
+  ]) {
+    const value = upstream.headers.get(name);
+    if (value) responseHeaders.set(name, value);
+  }
+  const upstreamContentType = responseHeaders.get('content-type') || '';
+  if (!upstreamContentType || upstreamContentType === 'application/octet-stream') {
+    const mediaTypes = {
+      mp4: platform === 'netease' && stream.codec === 'aac' ? 'audio/mp4' : 'video/mp4',
+      mp3: 'audio/mpeg',
+      flac: 'audio/flac',
+      m3u8: 'application/vnd.apple.mpegurl',
+      flv: 'video/x-flv',
+    };
+    const mediaType = mediaTypes[String(stream.format || '').toLowerCase()];
+    if (mediaType) responseHeaders.set('Content-Type', mediaType);
+  }
+  responseHeaders.set('Cache-Control', 'no-store');
+  return withCommonHeaders(new Response(upstream.body, {
+    status: upstream.status,
+    headers: responseHeaders,
+  }));
 }
 
 async function handleDanmakuRequest(url, dependencies) {
