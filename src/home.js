@@ -238,7 +238,7 @@ const HOME_HTML = `<!doctype html>
     .platform-hint[data-platform="youtube"] { color: #b42318; }
     .platform-hint[data-platform="youtube"]::before { background: #ff0033; }
 
-    input[type="text"], input[type="url"], input[type="password"], select {
+    input[type="text"], input[type="url"], input[type="password"], input[type="number"], select {
       width: 100%;
       min-height: 42px;
       padding: 9px 11px;
@@ -408,6 +408,29 @@ const HOME_HTML = `<!doctype html>
       padding-top: 24px;
       border-top: 1px solid var(--separator);
     }
+    .credential-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .credential-card {
+      min-width: 0;
+      padding: 22px;
+      border: 1px solid var(--separator);
+      border-radius: 8px;
+      background: var(--surface-raised);
+      box-shadow: var(--shadow);
+    }
+    .credential-card > button { width: 100%; margin-top: 12px; }
+    .credential-card .credential-actions { margin: 6px 0 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .credential-result {
+      display: block;
+      min-height: 20px;
+      margin: 12px 0;
+      overflow-wrap: anywhere;
+      color: var(--secondary);
+      font-size: 12px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+    }
+    .credential-result[data-state="success"] { color: var(--green); }
+    .credential-result[data-state="error"] { color: var(--orange); }
     .error-list { display: grid; grid-template-columns: repeat(5, 1fr); border-top: 1px solid var(--separator); }
     .error-item { min-width: 0; padding: 16px 12px; border-right: 1px solid var(--separator); }
     .error-item:last-child { border-right: 0; }
@@ -435,6 +458,7 @@ const HOME_HTML = `<!doctype html>
       .request-builder, .endpoint { grid-template-columns: 1fr; }
       .builder-side { border-top: 1px solid var(--separator); border-left: 0; }
       .section-heading { grid-template-columns: 1fr; gap: 8px; }
+      .credential-grid { grid-template-columns: 1fr; }
       .endpoint { gap: 14px; }
       .note-grid, .config-guide { grid-template-columns: 1fr; gap: 22px; }
       .error-list { grid-template-columns: repeat(3, 1fr); }
@@ -448,6 +472,8 @@ const HOME_HTML = `<!doctype html>
       .lead { font-size: 14px; }
       .route-row { min-width: 104px; }
       .builder-form, .builder-side { padding: 18px; }
+      .credential-card { padding: 18px; }
+      .credential-card .credential-actions { grid-template-columns: 1fr; }
       .input-with-action { grid-template-columns: minmax(0, 1fr) 70px; }
       .actions { grid-template-columns: 1fr; }
       .request-preview { min-height: 112px; }
@@ -479,7 +505,7 @@ const HOME_HTML = `<!doctype html>
       .topbar { background: rgba(18, 18, 19, 0.76); }
       .brand-mark { background: var(--label); color: #111; }
       .route-row { background: rgba(44, 44, 46, 0.58); }
-      input[type="text"], input[type="url"], input[type="password"], select { background: rgba(44, 44, 46, 0.78); }
+      input[type="text"], input[type="url"], input[type="password"], input[type="number"], select { background: rgba(44, 44, 46, 0.78); }
       .paste-button:hover, button.secondary:hover { background: #3a3a3c; }
       button.secondary:active { background: #48484a; }
       .compat-note { color: #ffd18a; }
@@ -510,6 +536,7 @@ const HOME_HTML = `<!doctype html>
       </a>
       <nav aria-label="页面导航">
         <a href="#request">请求生成器</a>
+        <a href="#ck-credentials">CK 密钥</a>
         <a href="#endpoints">接口</a>
         <a href="#auth">鉴权</a>
         <a href="#runtime">运行状态</a>
@@ -530,6 +557,8 @@ const HOME_HTML = `<!doctype html>
           <div class="route-summary" aria-label="接口摘要">
             <div class="route-row"><span class="method">GET</span><code>/api/v1/media/resolve</code><span>标准媒体响应</span></div>
             <div class="route-row"><span class="method">GET</span><code>/api/v1/play</code><span>302 播放跳转</span></div>
+            <div class="route-row"><span class="method">POST</span><code>/api/v1/credentials</code><span>个人 CK 与 key</span></div>
+            <div class="route-row"><span class="method">POST</span><code>/api/v1/playback-tickets</code><span>短期播放票据</span></div>
             <div class="route-row"><span class="method">GET</span><code>/api/v1/playlists/current</code><span>当前合集清单</span></div>
             <div class="route-row"><span class="method">GET</span><code>/api/v1/playlists/current/items/N</code><span>合集条目播放</span></div>
             <div class="route-row"><span class="method">GET</span><code>/api/v1/openapi.yaml</code><span>OpenAPI 3.1 规范</span></div>
@@ -583,6 +612,62 @@ const HOME_HTML = `<!doctype html>
             </div>
           </div>
         </form>
+      </div>
+    </section>
+
+    <section class="plain-band" id="ck-credentials">
+      <div class="section-inner">
+        <div class="section-heading">
+          <h2>Bilibili 高画质密钥</h2>
+          <p>保存个人 CK 后生成专属 key。key 只显示一次；用它生成绑定视频或合集的短期播放链接，链接里不包含 key。</p>
+        </div>
+        <div class="credential-grid">
+          <form class="credential-card" id="credential-create">
+            <p class="panel-title">保存 CK 并生成 key</p>
+            <div class="field">
+              <label class="field-label" for="bilibili-cookie">Bilibili Cookie</label>
+              <input id="bilibili-cookie" type="password" required maxlength="16384" autocomplete="off" placeholder="粘贴完整 Cookie 请求头内容">
+              <p class="field-help">在 Bilibili 登录后，从开发者工具 Network 请求头复制 Cookie。CK 使用服务器主密钥加密保存，不会放进播放链接。</p>
+            </div>
+            <div class="field">
+              <label class="field-label" for="retention-days">保存天数（1–365）</label>
+              <input id="retention-days" type="number" min="1" max="365" value="7" required>
+            </div>
+            <button type="submit">加密保存并生成 key</button>
+            <output class="credential-result" id="credential-created" aria-live="polite"></output>
+            <button id="copy-created-key" class="secondary" type="button" disabled>复制 key</button>
+          </form>
+
+          <form class="credential-card" id="ticket-create">
+            <p class="panel-title">生成安全播放链接</p>
+            <div class="field">
+              <label class="field-label" for="credential-key">你的 key</label>
+              <input id="credential-key" type="password" autocomplete="off" placeholder="v2l_…">
+            </div>
+            <div class="field">
+              <label class="field-label" for="ticket-media-url">Bilibili 视频或合集链接</label>
+              <input id="ticket-media-url" type="url" inputmode="url" required placeholder="https://www.bilibili.com/video/BV…">
+            </div>
+            <div class="field">
+              <label class="field-label" for="ticket-quality">画质</label>
+              <select id="ticket-quality">
+                <option value="">自动选择账号可用的最高画质</option>
+                <option value="720p">720p</option>
+                <option value="1080p">1080p</option>
+                <option value="1080p60">1080p60</option>
+                <option value="4k">4K</option>
+                <option value="8k">8K</option>
+              </select>
+            </div>
+            <div class="actions credential-actions">
+              <button id="create-playback-ticket" type="submit">生成播放链接</button>
+              <button id="rotate-credential" class="secondary" type="button">轮换 key</button>
+              <button id="delete-credential" class="secondary" type="button">删除 CK</button>
+            </div>
+            <output class="credential-result" id="ticket-result" aria-live="polite">播放链接默认 1 小时过期，并且只能播放本次提交的视频或合集。</output>
+            <button id="copy-ticket" class="secondary" type="button" disabled>复制播放链接</button>
+          </form>
+        </div>
       </div>
     </section>
 
@@ -961,6 +1046,132 @@ TRUST_PROXY=false</code></pre>
       window.setTimeout(function () { copyButton.textContent = '复制链接'; }, 1200);
     });
     updatePreview();
+  </script>
+  <script>
+    (function () {
+      const credentialForm = document.getElementById('credential-create');
+      const ticketForm = document.getElementById('ticket-create');
+      if (!credentialForm || !ticketForm) return;
+
+      const cookieInput = document.getElementById('bilibili-cookie');
+      const retentionInput = document.getElementById('retention-days');
+      const credentialOutput = document.getElementById('credential-created');
+      const credentialKeyInput = document.getElementById('credential-key');
+      const copyKeyButton = document.getElementById('copy-created-key');
+      const ticketUrlInput = document.getElementById('ticket-media-url');
+      const ticketQualityInput = document.getElementById('ticket-quality');
+      const ticketOutput = document.getElementById('ticket-result');
+      const copyTicketButton = document.getElementById('copy-ticket');
+      let createdKey = '';
+      let playbackUrl = '';
+
+      async function send(path, init) {
+        const localHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        if (window.location.protocol !== 'https:' && !localHost) throw new Error('请通过 HTTPS 页面提交 CK 和 key');
+        const response = await fetch(path, { cache: 'no-store', ...init });
+        let payload;
+        try { payload = await response.json(); } catch { throw new Error('服务器返回了无效响应'); }
+        if (!response.ok) throw new Error(payload.error?.message || '请求失败');
+        return payload.data;
+      }
+
+      function show(output, message, state) {
+        output.textContent = message;
+        output.dataset.state = state || '';
+      }
+
+      function authorization() {
+        const key = credentialKeyInput.value.trim();
+        if (!key) throw new Error('请先粘贴你的 key');
+        return { Authorization: 'Bearer ' + key };
+      }
+
+      credentialForm.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        if (!credentialForm.reportValidity()) return;
+        copyKeyButton.disabled = true;
+        createdKey = '';
+        show(credentialOutput, '正在加密保存…', '');
+        try {
+          const data = await send('/api/v1/credentials', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cookie: cookieInput.value, retentionDays: Number(retentionInput.value) }),
+          });
+          createdKey = data.key;
+          credentialKeyInput.value = createdKey;
+          cookieInput.value = '';
+          const expiry = new Date(data.expiresAt).toLocaleString();
+          show(credentialOutput, '请现在保存这个 key，它只显示这一次。保存有效期至 ' + expiry + String.fromCharCode(10) + createdKey, 'success');
+          copyKeyButton.disabled = false;
+        } catch (error) {
+          show(credentialOutput, error.message, 'error');
+        }
+      });
+
+      copyKeyButton.addEventListener('click', async function () {
+        if (!createdKey) return;
+        await navigator.clipboard.writeText(createdKey);
+        copyKeyButton.textContent = '已复制 key';
+        window.setTimeout(function () { copyKeyButton.textContent = '复制 key'; }, 1200);
+      });
+
+      ticketForm.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        if (!ticketForm.reportValidity()) return;
+        copyTicketButton.disabled = true;
+        playbackUrl = '';
+        show(ticketOutput, '正在生成绑定内容的短期链接…', '');
+        try {
+          const data = await send('/api/v1/playback-tickets', {
+            method: 'POST',
+            headers: { ...authorization(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: ticketUrlInput.value.trim(), mode: 'auto', quality: ticketQualityInput.value }),
+          });
+          playbackUrl = data.playUrl;
+          show(ticketOutput, '把下面的完整链接粘贴到 VizVid。它不含 key，将于 ' + new Date(data.expiresAt).toLocaleString() + ' 过期。' + String.fromCharCode(10) + playbackUrl, 'success');
+          copyTicketButton.disabled = false;
+        } catch (error) {
+          show(ticketOutput, error.message, 'error');
+        }
+      });
+
+      copyTicketButton.addEventListener('click', async function () {
+        if (!playbackUrl) return;
+        await navigator.clipboard.writeText(playbackUrl);
+        copyTicketButton.textContent = '已复制';
+        window.setTimeout(function () { copyTicketButton.textContent = '复制播放链接'; }, 1200);
+      });
+
+      document.getElementById('rotate-credential').addEventListener('click', async function () {
+        try {
+          const data = await send('/api/v1/credentials/current/rotate', {
+            method: 'POST', headers: authorization(),
+          });
+          createdKey = data.key;
+          credentialKeyInput.value = createdKey;
+          copyKeyButton.disabled = false;
+          show(credentialOutput, '旧 key 已失效。请现在保存新 key，它只显示这一次。' + String.fromCharCode(10) + createdKey, 'success');
+        } catch (error) {
+          show(credentialOutput, error.message, 'error');
+        }
+      });
+
+      document.getElementById('delete-credential').addEventListener('click', async function () {
+        try {
+          await send('/api/v1/credentials/current', { method: 'DELETE', headers: authorization() });
+          credentialKeyInput.value = '';
+          createdKey = '';
+          playbackUrl = '';
+          copyKeyButton.disabled = true;
+          copyTicketButton.disabled = true;
+          show(credentialOutput, 'CK 已删除，对应 key 已撤销。', 'success');
+          show(ticketOutput, '此 CK 已删除，需重新录入后才能生成播放链接。', '');
+        } catch (error) {
+          show(credentialOutput, error.message, 'error');
+        }
+      });
+    })();
   </script>
 </body>
 </html>`;

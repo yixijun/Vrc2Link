@@ -222,3 +222,17 @@ test('DASH mode reports missing separated tracks instead of falling back to a co
   assert.equal(response.status, 422);
   assert.equal((await response.json()).error.code, 'quality_unavailable');
 });
+
+test('DASH capability lasts for the video duration plus a playback margin', async () => {
+  const state = createMemoryState();
+  const response = await handleRequest(new Request(
+    `http://localhost/play?mode=dash&url=${encodeURIComponent(SOURCE_URL)}`,
+  ), {
+    state,
+    resolve: async () => ({ ...dashMedia(), duration: 7200 }),
+  });
+  assert.equal(response.status, 302);
+  const ticket = response.headers.get('location').match(/\/dash\/([A-Za-z0-9_-]{32})\/manifest\.mpd$/u)?.[1];
+  const record = getDashTicket(state, ticket);
+  assert.ok(record.ticketExpiresAt >= record.createdAt + (7200 + 300 - 1) * 1000);
+});

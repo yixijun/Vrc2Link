@@ -22,6 +22,8 @@ test('v1 root and OpenAPI document expose the versioned contract', async () => {
         mediaResolve: '/api/v1/media/resolve',
         play: '/api/v1/play',
         currentPlaylist: '/api/v1/playlists/current',
+        credentials: '/api/v1/credentials',
+        playbackTickets: '/api/v1/playback-tickets',
       },
     },
     meta: { apiVersion: '1', requestId: 'request-v1-root' },
@@ -30,7 +32,10 @@ test('v1 root and OpenAPI document expose the versioned contract', async () => {
   const specification = await handleRequest(new Request('http://localhost/api/v1/openapi.yaml'));
   assert.equal(specification.status, 200);
   assert.match(specification.headers.get('content-type'), /application\/yaml/u);
-  assert.match(await specification.text(), /openapi: 3\.1\.0/u);
+  const specificationText = await specification.text();
+  assert.match(specificationText, /openapi: 3\.1\.0/u);
+  assert.match(specificationText, /\/api\/v1\/playback-tickets/u);
+  assert.match(specificationText, /AES-256-GCM/u);
 });
 
 test('v1 media resolution uses the standard envelope and Bearer authentication', async () => {

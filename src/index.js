@@ -17,10 +17,19 @@ import {
   updateDashTicket,
 } from './dash.js';
 import { identifyPlatform, normalizeSourceUrl } from './utils/url.js';
+import {
+  authenticateCredential,
+  createCredential,
+  createPlaybackTicket,
+  deleteCredential,
+  getCredentialCookie,
+  getPlaybackTicket,
+  rotateCredential,
+} from './credentials.js';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, HEAD, POST, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Authorization, Content-Type',
   'Access-Control-Expose-Headers': [
     'API-Version', 'X-Request-Id', 'X-Cache', 'X-RateLimit-Limit', 'X-RateLimit-Remaining',
@@ -55,7 +64,7 @@ export async function handleRequest(request, dependencies = {}) {
     event: 'http_request',
     requestId,
     method: request.method,
-    path: new URL(request.url).pathname,
+    path: safeLogPath(new URL(request.url).pathname),
     status: response.status,
     platform: context.platform,
     cacheHit: context.cacheHit,
@@ -75,9 +84,18 @@ async function dispatchRequest(request, dependencies, context) {
   if (request.method === 'OPTIONS') {
     return withCommonHeaders(new Response(null, { status: 204 }));
   }
-  if (request.method !== 'GET' && !(request.method === 'HEAD' && isDashAssetPath(incomingUrl.pathname))) {
-    return errorResponse(new AppError(405, 'method_not_allowed', 'Only GET is supported'), {
-      Allow: isDashAssetPath(incomingUrl.pathname) ? 'GET, HEAD, OPTIONS' : 'GET, OPTIONS',
+  const requestPath = incomingUrl.pathname;
+  const credentialPostPath = request.method === 'POST' && [
+    '/api/v1/credentials',
+    '/api/v1/credentials/current/rotate',
+    '/api/v1/playback-tickets',
+  ].includes(requestPath);
+  const credentialDeletePath = request.method === 'DELETE' && requestPath === '/api/v1/credentials/current';
+  const ticketPlayPath = request.method === 'GET' && isPlaybackTicketPath(requestPath);
+  if (request.method !== 'GET' && !(request.method === 'HEAD' && isDashAssetPath(requestPath)) &&
+      !credentialPostPath && !credentialDeletePath && !ticketPlayPath) {
+    return errorResponse(new AppError(405, 'method_not_allowed', 'Method is not supported for this endpoint'), {
+      Allow: isDashAssetPath(requestPath) ? 'GET, HEAD, OPTIONS' : 'GET, HEAD, POST, DELETE, OPTIONS',
     });
   }
 
@@ -89,6 +107,8 @@ async function dispatchRequest(request, dependencies, context) {
         openapi: '/api/v1/openapi.yaml',
         mediaResolve: '/api/v1/media/resolve',
         play: '/api/v1/play',
+        credentials: '/api/v1/credentials',
+        playbackTickets: '/api/v1/playback-tickets',
         currentPlaylist: '/api/v1/playlists/current',
       },
     });
@@ -105,6 +125,21 @@ async function dispatchRequest(request, dependencies, context) {
 
   let rateLimitHeaders = {};
   try {
+    if (requestPath === '/api/v1/credentials' && request.method === 'POST') {
+      return await handleCreateCredential(request, dependencies);
+    }
+    if (requestPath === '/api/v1/credentials/current/rotate' && request.method === 'POST') {
+      return handleRotateCredential(request, dependencies);
+    }
+    if (requestPath === '/api/v1/credentials/current' && request.method === 'DELETE') {
+      return handleDeleteCredential(request, dependencies);
+    }
+    if (requestPath === '/api/v1/playback-tickets' && request.method === 'POST') {
+      return await handleCreatePlaybackTicket(request, dependencies);
+    }
+    if (ticketPlayPath) {
+      return await handlePlaybackTicketRequest(request, dependencies, context);
+    }
     if (dashAsset) return await handleDashAssetRequest(dashAsset, request, dependencies, context);
     if (url.pathname === '/') return withCommonHeaders(homePage());
     if (url.pathname === '/danmaku/current' || isCurrentDanmakuApi(url)) {
@@ -127,17 +162,21 @@ async function dispatchRequest(request, dependencies, context) {
     }
 
     const suppliedKey = requestApiKey(request, url);
-    const authenticated = authenticate(suppliedKey, env.API_KEY);
+    const credentialProfile = dependencies.credentialProfile || null;
+    const profileId = credentialProfile?.profileId || '';
+    const authenticated = credentialProfile != null || authenticate(suppliedKey, env.API_KEY);
     rateLimitHeaders = state
       ? enforceRateLimits({
           state,
           env,
           authenticated,
-          suppliedKey,
+          suppliedKey: profileId || suppliedKey,
           clientIp: dependencies.clientIp || 'unknown',
         })
       : {};
-    const cookies = authenticated
+    const cookies = credentialProfile
+      ? { bilibili: credentialProfile.cookie }
+      : authenticated
       ? Object.fromEntries([
           ['bilibili', env.BILIBILI_COOKIE],
           ['netease', env.NETEASE_COOKIE],
@@ -167,7 +206,7 @@ async function dispatchRequest(request, dependencies, context) {
         : undefined;
     const playlistSessionId = url.pathname === '/play'
       ? beginPlaylistSession({
-          state, env, clientIp: dependencies.clientIp || 'unknown', rawUrl, authenticated,
+          state, env, clientIp: dependencies.clientIp || 'unknown', rawUrl, authenticated, profileId,
           mode: requestedMode, quality,
         })
       : undefined;
@@ -192,7 +231,7 @@ async function dispatchRequest(request, dependencies, context) {
     if (url.pathname === '/play' && result.playlist) {
       playlistSessionResult = result;
       bindPlaylistSession({
-        state, env, clientIp: dependencies.clientIp || 'unknown', rawUrl, authenticated,
+        state, env, clientIp: dependencies.clientIp || 'unknown', rawUrl, authenticated, profileId,
         result: playlistSessionResult, sessionId: playlistSessionId,
         mode: requestedMode, quality,
       });
@@ -222,7 +261,7 @@ async function dispatchRequest(request, dependencies, context) {
     const dashMode = usesDashForResult(requestedMode, result, playbackSourceUrl, playbackQuality);
     if (dashMode) {
       const session = createDashSession({
-        request, env, state, rawUrl: playbackSourceUrl, authenticated, quality: playbackQuality, result,
+        request, env, state, rawUrl: playbackSourceUrl, authenticated, profileId, quality: playbackQuality, result,
       });
       if (url.pathname === '/play') {
         bindPlaylistSession({
@@ -231,6 +270,7 @@ async function dispatchRequest(request, dependencies, context) {
           clientIp: dependencies.clientIp || 'unknown',
           rawUrl,
           authenticated,
+          profileId,
           result: playlistSessionResult || result,
           sessionId: playlistSessionId,
           mode: requestedMode,
@@ -243,6 +283,7 @@ async function dispatchRequest(request, dependencies, context) {
         clientIp: dependencies.clientIp || 'unknown',
         rawUrl: playbackSourceUrl,
         result,
+        profileId,
       });
       const headers = {
         'X-Stream-Quality': session.record.video.quality,
@@ -275,6 +316,7 @@ async function dispatchRequest(request, dependencies, context) {
           clientIp: dependencies.clientIp || 'unknown',
           rawUrl,
           result,
+          profileId,
         });
         const danmaku = await loadDanmakuForSession(url, result, dependencies);
         return jsonResponse({ ...result, danmaku }, {
@@ -295,7 +337,7 @@ async function dispatchRequest(request, dependencies, context) {
     const stream = selectPlayableStream(result, playbackQuality);
     if (url.pathname === '/play') {
       bindPlaylistSession({
-        state, env, clientIp: dependencies.clientIp || 'unknown', rawUrl, authenticated,
+        state, env, clientIp: dependencies.clientIp || 'unknown', rawUrl, authenticated, profileId,
         result: playlistSessionResult || result,
         sessionId: playlistSessionId,
         mode: requestedMode,
@@ -308,6 +350,7 @@ async function dispatchRequest(request, dependencies, context) {
       clientIp: dependencies.clientIp || 'unknown',
       rawUrl: playbackSourceUrl,
       result,
+      profileId,
     });
     const streamHeaders = {
       'X-Stream-Quality': stream.quality,
@@ -330,6 +373,161 @@ async function dispatchRequest(request, dependencies, context) {
     }
     return errorResponse(new AppError(500, 'internal_error', 'Internal server error'));
   }
+}
+
+async function handleCreateCredential(request, dependencies) {
+  const env = dependencies.env || process.env;
+  const state = dependencies.state;
+  if (!state) throw new AppError(503, 'state_unavailable', 'Credential storage is unavailable');
+  const clientIp = dependencies.clientIp || 'unknown';
+  const rateLimitHeaders = enforceRateLimits({
+    state, env, authenticated: false, suppliedKey: '', clientIp,
+  });
+  const body = await readJsonBody(request);
+  const credential = createCredential({
+    state,
+    env,
+    cookie: body.cookie,
+    retentionDays: body.retentionDays,
+  });
+  return jsonResponse({
+    key: credential.key,
+    expiresAt: credential.expiresAt,
+    retentionDays: body.retentionDays,
+    revealOnce: true,
+  }, { status: 201, headers: rateLimitHeaders });
+}
+
+function handleRotateCredential(request, dependencies) {
+  const credential = rotateCredential({
+    state: dependencies.state,
+    key: requiredBearerKey(request),
+  });
+  return jsonResponse({
+    key: credential.key,
+    expiresAt: credential.expiresAt,
+    revealOnce: true,
+  });
+}
+
+function handleDeleteCredential(request, dependencies) {
+  deleteCredential({
+    state: dependencies.state,
+    key: requiredBearerKey(request),
+  });
+  return jsonResponse({ deleted: true });
+}
+
+async function handleCreatePlaybackTicket(request, dependencies) {
+  const env = dependencies.env || process.env;
+  const state = dependencies.state;
+  if (!state) throw new AppError(503, 'state_unavailable', 'Playback ticket storage is unavailable');
+  const key = requiredBearerKey(request);
+  const credential = authenticateCredential({ state, env, key });
+  const rateLimitHeaders = enforceRateLimits({
+    state, env, authenticated: true, suppliedKey: key, clientIp: dependencies.clientIp || 'unknown',
+  });
+  const body = await readJsonBody(request);
+  const rawUrl = String(body.url || '').trim();
+  const sourceUrl = normalizeSourceUrl(rawUrl);
+  if (!sourceUrl || identifyPlatform(sourceUrl) !== 'bilibili') {
+    throw new AppError(400, 'invalid_bilibili_url', 'Playback tickets require a supported Bilibili video, live, or collection URL');
+  }
+  const mode = body.mode == null || body.mode === '' ? 'auto' : String(body.mode);
+  if (!['auto', 'dash', 'single'].includes(mode)) {
+    throw new AppError(400, 'invalid_play_mode', 'mode must be auto, dash, or single');
+  }
+  const quality = String(body.quality || '').trim();
+  if (quality.length > 32 || /[^\w.-]/u.test(quality)) {
+    throw new AppError(400, 'invalid_quality', 'quality contains unsupported characters');
+  }
+  const ticket = createPlaybackTicket({
+    state,
+    env,
+    profileId: credential.profileId,
+    sourceUrl,
+    mode,
+    quality,
+  });
+  const configuredBase = String(env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/u, '');
+  const publicBase = configuredBase || new URL(request.url).origin;
+  return jsonResponse({
+    playUrl: `${publicBase}/api/v1/playback-tickets/${ticket.token}/play`,
+    expiresAt: ticket.expiresAt,
+    expiresInSeconds: ticket.ttlSeconds,
+    mode,
+    quality: quality || 'auto',
+  }, { headers: rateLimitHeaders });
+}
+
+async function handlePlaybackTicketRequest(request, dependencies, context) {
+  const pathname = new URL(request.url).pathname;
+  const match = pathname.match(/^\/api\/v1\/playback-tickets\/([A-Za-z0-9_-]{43})\/play$/u);
+  const ticket = getPlaybackTicket({ state: dependencies.state, token: match?.[1] });
+  if (!ticket) throw new AppError(404, 'playback_ticket_not_found', 'Playback ticket is missing or expired');
+  const env = dependencies.env || process.env;
+  const cookie = getCredentialCookie({ state: dependencies.state, env, profileId: ticket.profileId });
+  const replayUrl = new URL(request.url);
+  replayUrl.pathname = '/api/v1/play';
+  replayUrl.search = '';
+  replayUrl.searchParams.set('url', ticket.sourceUrl);
+  replayUrl.searchParams.set('mode', ticket.mode || 'auto');
+  if (ticket.quality) replayUrl.searchParams.set('quality', ticket.quality);
+  const headers = new Headers(request.headers);
+  headers.delete('authorization');
+  headers.delete('cookie');
+  const replayRequest = new Request(replayUrl, { method: 'GET', headers });
+  return dispatchRequest(replayRequest, {
+    ...dependencies,
+    credentialProfile: { profileId: ticket.profileId, cookie },
+  }, context);
+}
+
+function isPlaybackTicketPath(pathname) {
+  return /^\/api\/v1\/playback-tickets\/[A-Za-z0-9_-]{43}\/play$/u.test(String(pathname || ''));
+}
+
+function safeLogPath(pathname) {
+  return String(pathname || '')
+    .replace(/(\/api\/v1\/playback-tickets\/)[A-Za-z0-9_-]{43}(\/play)/u, '$1:ticket$2')
+    .replace(/(\/(?:api\/v1\/)?dash\/)[A-Za-z0-9_-]{32}(\/)/u, '$1:ticket$2');
+}
+
+function requiredBearerKey(request) {
+  const authorization = request.headers.get('authorization') || '';
+  const match = authorization.match(/^Bearer\s+([^\s]+)$/iu);
+  if (!match) throw new AppError(401, 'invalid_authorization', 'Authorization must use the Bearer scheme');
+  return match[1];
+}
+
+async function readJsonBody(request) {
+  if (!/^application\/json(?:\s*;|$)/iu.test(request.headers.get('content-type') || '')) {
+    throw new AppError(415, 'unsupported_media_type', 'Content-Type must be application/json');
+  }
+  const reader = request.body?.getReader();
+  if (!reader) throw new AppError(400, 'invalid_json', 'Request body must contain a JSON object');
+  const chunks = [];
+  let size = 0;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > 32 * 1024) {
+      await reader.cancel();
+      throw new AppError(413, 'request_body_too_large', 'JSON request body must be 32 KB or smaller');
+    }
+    chunks.push(Buffer.from(value));
+  }
+  let value;
+  try {
+    value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    throw new AppError(400, 'invalid_json', 'Request body must contain valid JSON');
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new AppError(400, 'invalid_json', 'Request body must contain a JSON object');
+  }
+  return value;
 }
 
 function isApiV1Path(pathname) {
@@ -491,17 +689,18 @@ async function handleDashAssetRequest(asset, request, dependencies, context) {
   }));
 }
 
-function createDashSession({ request, env, state, rawUrl, authenticated, quality, result }) {
+function createDashSession({ request, env, state, rawUrl, authenticated, profileId, quality, result }) {
   const sourceUrl = normalizeSourceUrl(rawUrl || '');
   const tracks = selectDashTracks(result, quality);
   const record = makeDashRecord({
     sourceUrl,
     authenticated,
+    profileId,
     quality,
     result,
     tracks,
   });
-  const ttlSeconds = dashTicketTtl(env);
+  const ttlSeconds = dashTicketTtl(env, result);
   record.ticketExpiresAt = Date.now() + ttlSeconds * 1000;
   const ticketSession = createDashTicket(state, record, ttlSeconds);
   return {
@@ -542,6 +741,7 @@ async function loadFreshDashTicket(ticket, dependencies) {
   const env = dependencies.env || process.env;
   const initial = getDashTicket(state, ticket);
   if (!initial) throw new AppError(404, 'dash_ticket_not_found', 'DASH ticket is missing or expired');
+  if (initial.profileId) getCredentialCookie({ state, env, profileId: initial.profileId });
   if (!dashTicketNeedsRefresh(initial)) return initial;
 
   const existing = dashRefreshLocks.get(ticket);
@@ -560,7 +760,7 @@ async function refreshDashTicket(ticket, dependencies, env) {
   const resolve = dependencies.resolve || resolveMedia;
   const result = await resolve(latest.sourceUrl, {
     authenticated: latest.authenticated === true,
-    cookies: cookiesForAuthentication(latest.authenticated === true, env),
+    cookies: cookiesForAuthentication(latest.authenticated === true, env, latest.profileId, dependencies.state),
     quality: latest.quality,
     generic: genericOptions(env),
     mode: 'dash',
@@ -573,6 +773,7 @@ async function refreshDashTicket(ticket, dependencies, env) {
   const next = makeDashRecord({
     sourceUrl: latest.sourceUrl,
     authenticated: latest.authenticated === true,
+    profileId: latest.profileId,
     quality: latest.quality,
     result,
     tracks,
@@ -730,7 +931,7 @@ async function handleCurrentPlaylistRequest(dependencies, context) {
     const resolve = dependencies.resolve || resolveMedia;
     result = await resolve(session.sourceUrl, {
       authenticated: session.authenticated === true,
-      cookies: cookiesForAuthentication(session.authenticated === true, env),
+      cookies: cookiesForAuthentication(session.authenticated === true, env, session.profileId, state),
       generic: genericOptions(env),
       playlistMode: true,
       resolverPrefix: env.PLAYLIST_RESOLVER_PREFIX || 'https://vrc2link.luonako.cn/api/v1/play?mode=auto&url=',
@@ -777,6 +978,7 @@ async function handlePlaylistItemRequest(url, request, dependencies, context) {
       env,
       resolve: dependencies.resolve || resolveMedia,
       authenticated: session.authenticated === true,
+      profileId: session.profileId || '',
       mode: session.mode || 'single',
       quality: session.quality,
       request,
@@ -803,7 +1005,7 @@ async function resolvePlaylistItemResponse(playlistResult, index, dependencies, 
     : dependencies.quality;
   const result = await dependencies.resolve(sourceUrl, {
     authenticated: dependencies.authenticated === true,
-    cookies: cookiesForAuthentication(dependencies.authenticated === true, env),
+    cookies: cookiesForAuthentication(dependencies.authenticated === true, env, dependencies.profileId, dependencies.state),
     generic,
     quality,
     mode: resolveMode,
@@ -817,6 +1019,7 @@ async function resolvePlaylistItemResponse(playlistResult, index, dependencies, 
     clientIp: dependencies.clientIp || 'unknown',
     rawUrl: sourceUrl,
     result,
+    profileId: dependencies.profileId,
   });
   if (usesDashForResult(requestedMode, result, sourceUrl, quality)) {
     const session = createDashSession({
@@ -825,6 +1028,7 @@ async function resolvePlaylistItemResponse(playlistResult, index, dependencies, 
       state: dependencies.state,
       rawUrl: sourceUrl,
       authenticated: dependencies.authenticated === true,
+      profileId: dependencies.profileId,
       quality,
       result,
     });
@@ -854,7 +1058,7 @@ async function resolvePlaylistItemResponse(playlistResult, index, dependencies, 
   }));
 }
 
-function beginPlaylistSession({ state, env, clientIp, rawUrl, authenticated, mode, quality }) {
+function beginPlaylistSession({ state, env, clientIp, rawUrl, authenticated, profileId, mode, quality }) {
   if (!state) return;
   const sourceUrl = normalizeSourceUrl(rawUrl || '');
   if (!sourceUrl) return;
@@ -862,6 +1066,7 @@ function beginPlaylistSession({ state, env, clientIp, rawUrl, authenticated, mod
   state.setJson(playlistSessionKey(clientIp), {
     sourceUrl,
     authenticated: authenticated === true,
+    profileId: profileId || '',
     mode: mode || 'single',
     quality,
     autoPlay: false,
@@ -871,7 +1076,7 @@ function beginPlaylistSession({ state, env, clientIp, rawUrl, authenticated, mod
   return sessionId;
 }
 
-function bindPlaylistSession({ state, env, clientIp, rawUrl, authenticated, result, sessionId, mode, quality }) {
+function bindPlaylistSession({ state, env, clientIp, rawUrl, authenticated, profileId, result, sessionId, mode, quality }) {
   if (!state) return;
   const sourceUrl = normalizeSourceUrl(rawUrl || '');
   if (!sourceUrl) return;
@@ -881,6 +1086,7 @@ function bindPlaylistSession({ state, env, clientIp, rawUrl, authenticated, resu
   state.setJson(sessionKey, {
     sourceUrl,
     authenticated: authenticated === true,
+    profileId: profileId || current?.profileId || '',
     mode: mode || current?.mode || 'single',
     quality: quality ?? current?.quality,
     autoPlay: Boolean(result?.playlist),
@@ -918,8 +1124,9 @@ function normalizePlaylistIndex(value, length) {
   return Number.isInteger(index) && index >= 0 && index < length ? index : 0;
 }
 
-function cookiesForAuthentication(authenticated, env) {
+function cookiesForAuthentication(authenticated, env, profileId = '', state) {
   if (!authenticated) return {};
+  if (profileId) return { bilibili: getCredentialCookie({ state, env, profileId }) };
   return Object.fromEntries([
     ['bilibili', env.BILIBILI_COOKIE],
     ['netease', env.NETEASE_COOKIE],
@@ -936,11 +1143,16 @@ function playlistSessionTtl(env) {
   return positiveInteger(env.PLAYLIST_SESSION_TTL_SECONDS, 21600);
 }
 
-function dashTicketTtl(env) {
-  return positiveInteger(env.DASH_TICKET_TTL_SECONDS, 3600);
+function dashTicketTtl(env, result) {
+  const configured = positiveInteger(env.DASH_TICKET_TTL_SECONDS, 3600);
+  const duration = Number(result?.duration);
+  const mediaWindow = Number.isFinite(duration) && duration > 0
+    ? Math.min(86400, Math.ceil(duration) + 300)
+    : 0;
+  return Math.max(configured, mediaWindow);
 }
 
-function bindDanmakuSession({ state, env, clientIp, rawUrl, result }) {
+function bindDanmakuSession({ state, env, clientIp, rawUrl, result, profileId = '' }) {
   if (!state) return;
   const sourceUrl = normalizeSourceUrl(rawUrl || '');
   state.setJson(`danmaku:session:${hashIdentity(clientIp)}`, {
@@ -950,6 +1162,7 @@ function bindDanmakuSession({ state, env, clientIp, rawUrl, result }) {
     webRid: result.webRid || '',
     sourceUrl,
     authenticated: result.authenticated === true,
+    profileId,
   }, positiveInteger(env.DANMAKU_SESSION_TTL_SECONDS, 21600));
 }
 

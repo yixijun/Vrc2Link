@@ -12,6 +12,8 @@ const parsedPort = Number.parseInt(config.PORT || '7890', 10);
 const port = Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : 7890;
 const sqlitePath = resolve(process.cwd(), config.SQLITE_PATH || 'data/vrc2link.sqlite');
 const state = createSqliteState(sqlitePath);
+const cleanupTimer = setInterval(() => state.purgeExpired(), 60_000);
+cleanupTimer.unref();
 const trustProxy = String(config.TRUST_PROXY).toLowerCase() === 'true';
 const logger = (entry) => console.log(JSON.stringify({
   timestamp: new Date().toISOString(),
@@ -26,10 +28,18 @@ const server = createServer(async (request, response) => {
       if (value) headers.set(name, Array.isArray(value) ? value.join(', ') : value);
     }
 
-    const webResponse = await handleRequest(new Request(url, {
+    const requestInit = {
       method: request.method,
       headers,
-    }), {
+    };
+    const hasRequestBody = Number(request.headers['content-length']) > 0 ||
+      request.headers['transfer-encoding'] != null;
+    if (request.method !== 'GET' && request.method !== 'HEAD' && hasRequestBody) {
+      requestInit.body = Readable.toWeb(request);
+      requestInit.duplex = 'half';
+    }
+
+    const webResponse = await handleRequest(new Request(url, requestInit), {
       env: config,
       state,
       logger,
@@ -66,6 +76,7 @@ server.listen(port, () => {
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.once(signal, () => {
     server.close(() => {
+      clearInterval(cleanupTimer);
       state.close();
       process.exit(0);
     });

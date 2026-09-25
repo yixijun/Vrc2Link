@@ -34,7 +34,17 @@ PLAYLIST_RESOLVER_PREFIX=https://vrc2link.luonako.cn/api/v1/play?mode=auto&url=
 PLAYLIST_SESSION_TTL_SECONDS=21600
 PUBLIC_BASE_URL=https://vrc2link.example
 DASH_TICKET_TTL_SECONDS=3600
+CK_MASTER_KEY=64-位十六进制随机密钥
+PLAYBACK_TICKET_TTL_SECONDS=3600
 ```
+
+为自助 CK 功能生成主密钥：
+
+```powershell
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+```
+
+把输出写入服务端 `config.env` 的 `CK_MASTER_KEY`。请备份并严格保密；丢失或更换主密钥会导致已保存的 CK 无法解密。不要把该主密钥提交到 Git。
 
 Cookie 不需要挑选字段。在已登录的平台页面打开开发者工具，进入 Network，刷新页面，选择一个同平台请求，在 Request Headers 中复制完整的 `Cookie` 值，然后直接粘贴到对应等号后面。
 
@@ -62,6 +72,12 @@ DANMAKU_MAX_LIVE_MESSAGES=30
 ```
 
 抖音直播弹幕不在本次范围内；原有抖音短视频解析不受影响。Unity 安装步骤见 `Unity/Assets/Vrc2LinkDanmaku/README.md`。
+
+## 个人 Bilibili CK 播放
+
+服务端设置 `CK_MASTER_KEY` 后，用户可在首页的“Bilibili 高画质密钥”面板自行录入 CK，选择 1–365 天保存期限并取得个人 key。key 创建或轮换时只显示一次；网页不会把 CK 或 key 放进播放 URL。使用 key 创建的视频/合集链接默认一小时内可启动，启动后 DASH 票据至少覆盖视频时长再加 5 分钟（最多 24 小时）。玩家拿到的完整链接只绑定提交的内容。播放器粘贴该完整链接即可使用 CK 权限播放；DASH 刷新、合集切歌和弹幕沿用同一个 CK profile。key 可在网页面板轮换或删除。
+
+个人 key 只授权 Bilibili CK，不会授予服务器配置、其他平台 Cookie 或任意来源 URL 的访问权限。票据可以在 VRChat 房间内分享，但仅在过期前播放绑定的媒体；撤销 CK 后，已经发给播放器的 CDN 直链仍可能继续工作到上游链接失效。
 
 ## 通用视频网站解析
 
@@ -108,6 +124,8 @@ GENERIC_RESOLVER_MAX_CONCURRENT=2
 | `PLAYLIST_SESSION_TTL_SECONDS` | 合集/歌单会话保留秒数，默认 `21600` |
 | `PUBLIC_BASE_URL` | 生成 DASH ticket URL 使用的公开站点根地址；未设置时使用当前请求 origin |
 | `DASH_TICKET_TTL_SECONDS` | DASH ticket 保留秒数，默认 `3600` |
+| `CK_MASTER_KEY` | 自助 CK 功能必需的 64 位十六进制 AES-256 主密钥，只能保存在服务端配置中 |
+| `PLAYBACK_TICKET_TTL_SECONDS` | CK 播放票据有效期，默认 `3600` 秒，最大 `86400` 秒 |
 | `TRUST_PROXY` | 是否信任代理 IP 请求头，默认 `false` |
 
 修改配置后需要重启服务。不传鉴权凭证时使用匿名解析；请求头 `Authorization: Bearer YOUR_API_KEY` 与 `API_KEY` 一致时才会使用服务器 Cookie；错误的凭证返回 `401`。旧的 `?key=` 查询参数继续兼容。

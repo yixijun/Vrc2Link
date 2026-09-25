@@ -12,6 +12,8 @@ tags:
   - name: Playlists
   - name: Danmaku
   - name: DASH
+  - name: Credentials
+  - name: Playback Tickets
 paths:
   /api/v1:
     get:
@@ -35,6 +37,125 @@ paths:
             application/yaml:
               schema:
                 type: string
+  /api/v1/credentials:
+    post:
+      tags: [Credentials]
+      summary: Store an encrypted Bilibili cookie and issue a key
+      description: The generated key is returned once. CK is encrypted at rest using AES-256-GCM and the server's CK_MASTER_KEY; retentionDays is limited to 1–365.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CredentialCreateRequest'
+      responses:
+        '201':
+          description: Credential stored; the bearer key is shown once in the standard JSON envelope.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CredentialKey'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '413':
+          $ref: '#/components/responses/ApiError'
+        '429':
+          $ref: '#/components/responses/ApiError'
+        '503':
+          $ref: '#/components/responses/ApiError'
+  /api/v1/credentials/current/rotate:
+    post:
+      tags: [Credentials]
+      summary: Rotate the current Bilibili key
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Replacement key returned once; the old key is revoked.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CredentialKey'
+        '401':
+          $ref: '#/components/responses/ApiError'
+  /api/v1/credentials/current:
+    delete:
+      tags: [Credentials]
+      summary: Delete the current CK and revoke its key
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Credential removed.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          deleted:
+                            type: boolean
+        '401':
+          $ref: '#/components/responses/ApiError'
+  /api/v1/playback-tickets:
+    post:
+      tags: [Playback Tickets]
+      summary: Create a short-lived Bilibili playback URL
+      description: Requires a personal Bilibili key in Authorization. The resulting capability is bound to the submitted Bilibili video, live room, or collection and does not contain the key.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlaybackTicketCreateRequest'
+      responses:
+        '200':
+          description: Ticket URL and expiry in the standard JSON envelope.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PlaybackTicket'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '429':
+          $ref: '#/components/responses/ApiError'
+  /api/v1/playback-tickets/{ticket}/play:
+    get:
+      tags: [Playback Tickets]
+      summary: Play the media bound to a ticket
+      description: Redirects to the selected media or DASH manifest. The opaque URL is the only credential the player receives; it cannot be changed to resolve another source URL. DASH resources remain available for at least media duration plus five minutes, capped at 24 hours.
+      parameters:
+        - $ref: '#/components/parameters/PlaybackTicket'
+      responses:
+        '302':
+          $ref: '#/components/responses/Redirect'
+        '404':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
   /api/v1/media/resolve:
     get:
       tags: [Media]
@@ -245,7 +366,7 @@ components:
     BearerAuth:
       type: http
       scheme: bearer
-      description: Optional. Required only to use server-configured platform cookies.
+      description: Global API key for legacy server-configured cookies, or a personal Bilibili credential key for credential and playback-ticket operations.
   parameters:
     Url:
       name: url
@@ -278,6 +399,13 @@ components:
       schema:
         type: string
         pattern: '^[A-Za-z0-9_-]{32}$'
+    PlaybackTicket:
+      name: ticket
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9_-]{43}$'
   schemas:
     Envelope:
       type: object
@@ -297,6 +425,66 @@ components:
         requestId:
           type: string
           format: uuid
+    CredentialCreateRequest:
+      type: object
+      required: [cookie, retentionDays]
+      properties:
+        cookie:
+          type: string
+          minLength: 1
+          maxLength: 16384
+          writeOnly: true
+        retentionDays:
+          type: integer
+          minimum: 1
+          maximum: 365
+    CredentialKey:
+      type: object
+      required: [key, expiresAt, revealOnce]
+      properties:
+        key:
+          type: string
+          format: password
+          description: Bearer key. Save it now; it cannot be recovered.
+        expiresAt:
+          type: integer
+          format: int64
+        retentionDays:
+          type: integer
+        revealOnce:
+          type: boolean
+          const: true
+    PlaybackTicketCreateRequest:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Bilibili video, live room, or collection URL.
+        mode:
+          type: string
+          enum: [auto, dash, single]
+          default: auto
+        quality:
+          type: string
+          description: Optional exact quality, such as 1080p. Omit for the highest quality available to this account.
+    PlaybackTicket:
+      type: object
+      required: [playUrl, expiresAt, expiresInSeconds, mode, quality]
+      properties:
+        playUrl:
+          type: string
+          format: uri
+        expiresAt:
+          type: integer
+          format: int64
+        expiresInSeconds:
+          type: integer
+        mode:
+          type: string
+        quality:
+          type: string
     ErrorEnvelope:
       type: object
       required: [error, meta]

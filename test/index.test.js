@@ -38,6 +38,9 @@ test('only the new API endpoints are exposed', async () => {
   assert.match(html, /<code>\/api\/v1\/openapi\.yaml<\/code>/);
   assert.match(html, /<code>\/api\/v1\/play\?mode=dash<\/code>/);
   assert.match(html, /DASH 音视频分离流/);
+  assert.match(html, /Bilibili 高画质密钥/u);
+  assert.match(html, /保存天数（1–365）/u);
+  assert.match(html, /create-playback-ticket/u);
   assert.match(html, /为什么 1080p 会返回 422/);
   assert.match(html, /生产运行状态保存在本机 SQLite/);
   assert.match(html, /429 rate_limited/);
@@ -47,6 +50,9 @@ test('only the new API endpoints are exposed', async () => {
   const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
   assert.ok(script);
   assert.doesNotThrow(() => new Function(script));
+  const pageScripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gu)].map((match) => match[1]);
+  assert.equal(pageScripts.length, 2);
+  assert.doesNotThrow(() => new Function(pageScripts[1]));
 
   const createControl = (initial = {}) => ({
     value: '',

@@ -1,6 +1,6 @@
 # Vrc2Link HTTP API v1
 
-所有新客户端统一使用 `/api/v1`。接口采用 HTTPS 和 UTF-8；资源读取使用 `GET`，跨域预检使用 `OPTIONS`；DASH 票据资源也支持无响应体的 `HEAD`。媒体播放、合集选曲和 DASH 轨道通过 HTTP 重定向交给 VRChat 客户端，不代理或加工媒体。
+所有新客户端统一使用 `/api/v1`。接口采用 HTTPS 和 UTF-8；资源读取使用 `GET`，凭据与播放票据创建使用 `POST`，凭据撤销使用 `DELETE`，跨域预检使用 `OPTIONS`；DASH 资源也支持无响应体的 `HEAD`。媒体播放、合集选曲和 DASH 轨道通过 HTTP 重定向交给 VRChat 客户端，不代理或加工媒体。
 
 完整机器可读规范位于 [`openapi-v1.yaml`](openapi-v1.yaml)，服务也通过 `GET /api/v1/openapi.yaml` 提供该文件。
 
@@ -54,6 +54,36 @@ JSON 错误统一使用 `error` 与 `meta`，HTTP 状态码表达错误类别，
 | `GET /api/v1/dash/{ticket}/manifest.mpd` | MPD | 获取固定票据对应的 DASH 清单 |
 | `GET /api/v1/dash/{ticket}/video` | `302 Location` | 跳转到 DASH 视频 CDN 直链 |
 | `GET /api/v1/dash/{ticket}/audio` | `302 Location` | 跳转到 DASH 音频 CDN 直链 |
+| `POST /api/v1/credentials` | JSON 信封 | 加密保存 Bilibili CK，并一次性生成用户 key |
+| `POST /api/v1/credentials/current/rotate` | JSON 信封 | 轮换当前 key，旧 key 立即失效 |
+| `DELETE /api/v1/credentials/current` | JSON 信封 | 删除当前 CK 并撤销 key |
+| `POST /api/v1/playback-tickets` | JSON 信封 | 用 key 创建绑定具体 Bilibili 内容的短期播放票据 |
+| `GET /api/v1/playback-tickets/{ticket}/play` | `302 Location` | 通过票据播放固定视频或合集，不需要播放器携带 key |
+
+### Bilibili CK 与短期播放票据
+
+服务端必须配置 `CK_MASTER_KEY`（64 位十六进制）才能启用个人 CK。网页的 CK 面板通过 HTTPS 将 Cookie 提交到 `POST /api/v1/credentials`；`cookie` 是完整 Cookie 请求头值，`retentionDays` 是 1–365 的整数。服务端使用 AES-256-GCM 加密 Cookie，只保存 key 的 SHA-256 哈希。key 仅在创建和轮换时返回一次，丢失后无法找回。
+
+```http
+POST /api/v1/credentials
+Content-Type: application/json
+
+{"cookie":"SESSDATA=…; bili_jct=…","retentionDays":7}
+```
+
+使用个人 key 创建播放票据时，必须通过 `Authorization: Bearer <key>` 发送，不要放进 URL：
+
+```http
+POST /api/v1/playback-tickets
+Authorization: Bearer v2l_…
+Content-Type: application/json
+
+{"url":"https://www.bilibili.com/video/BV…","mode":"auto","quality":"1080p"}
+```
+
+响应中的 `data.playUrl` 是可粘贴到 VizVid 的完整地址。播放链接默认一小时内可启动（服务端可用 `PLAYBACK_TICKET_TTL_SECONDS` 调整，上限 24 小时），只绑定提交的视频或合集；播放时服务端从个人 CK profile 取 CK，因此 DASH 刷新、合集切歌和弹幕沿用同一 CK。启动后，内部 DASH 资源票据至少覆盖视频时长再加 5 分钟，最长 24 小时，避免一小时的启动票据在长视频播放中途失效。票据 URL 可被房间内其他人看到，但不包含 key，且不能改成其他视频或调用其他账号资源。删除 CK 会阻止后续票据解析和刷新；已发出的 CDN 直链在上游失效前可能继续播放。
+
+key 通过 `POST /api/v1/credentials/current/rotate` 轮换，通过 `DELETE /api/v1/credentials/current` 删除，两者都需要当前 key 的 Bearer 授权。轮换后旧 key 立即失效；播放票据会在自身过期前保持绑定原 profile。
 
 ### 媒体解析与播放
 
@@ -84,21 +114,21 @@ GET /api/v1/play?mode=auto&quality=1080p&url=https%3A%2F%2Fwww.bilibili.com%2Fvi
 Authorization: Bearer YOUR_API_KEY
 ```
 
-没有凭证的请求按匿名权限处理。`?key=...` 仅为旧客户端和浏览器跳转场景保留兼容；不要把密钥写入公开世界资产、日志或可分享链接。固定的合集与弹幕读取接口不接受账号 Cookie 权限。
+没有凭证的请求按匿名权限处理。通用旧 `API_KEY` 的 `?key=...` 仅为旧客户端和浏览器跳转场景保留兼容；个人 Bilibili key 必须只通过 `Authorization` 请求头传给凭据管理或票据创建端点。不要把任何 key 写入公开世界资产、日志或可分享链接。固定的合集与弹幕读取接口继续按服务器保存的当前播放会话工作，不把个人 key 放进 Unity URL。
 
 ### 状态码与错误码
 
 | HTTP | 常见错误码 | 含义 |
 | --- | --- | --- |
-| `400` | `missing_url`、`invalid_url`、`invalid_play_mode`、`invalid_segment` | 参数格式错误 |
-| `401` | `invalid_key`、`invalid_authorization` | 鉴权凭证错误 |
-| `404` | `not_found`、`dash_ticket_not_found` | 路径或票据不存在/过期 |
+| `400` | `missing_url`、`invalid_url`、`invalid_play_mode`、`invalid_retention_days`、`invalid_bilibili_url`、`invalid_segment` | 参数格式错误 |
+| `401` | `invalid_key`、`invalid_authorization`、`invalid_credential_key`、`credential_revoked` | 鉴权凭证错误、已过期或已撤销 |
+| `404` | `not_found`、`dash_ticket_not_found`、`playback_ticket_not_found` | 路径或票据不存在/过期 |
 | `405` | `method_not_allowed` | 使用了不支持的方法 |
 | `409` | `no_playlist_session`、`no_danmaku_session`、`playlist_session_pending` | 当前会话尚未建立或状态冲突 |
 | `422` | `quality_unavailable`、`not_a_playlist`、`danmaku_unsupported` | 请求有效，但当前内容无法提供该功能 |
 | `429` | `rate_limited` | 超出请求额度；按 `Retry-After` 重试 |
 | `502` | `upstream_error`、`dash_track_unavailable` | 上游平台或媒体源失败 |
-| `503` | `state_unavailable` | 服务端状态存储不可用 |
+| `503` | `state_unavailable`、`credential_encryption_unavailable`、`credential_decryption_failed` | 服务端存储或 CK 加密配置不可用 |
 
 客户端应以 `error.code` 分支处理，不解析英文 `error.message`。服务端可能增加错误码；同一错误码的含义保持稳定。
 

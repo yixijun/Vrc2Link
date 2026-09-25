@@ -1,4 +1,5 @@
 import { AppError } from './errors.js';
+import { getCredentialCookie } from './credentials.js';
 import {
   fetchBilibiliLiveDanmaku,
   fetchBilibiliVideoDanmaku,
@@ -14,7 +15,9 @@ export async function fetchCurrentDanmaku(session, query, options = {}) {
   if (session.platform === 'bilibili' && session.type === 'video') {
     if (query.live) throw unsupportedMode();
     return fetchBilibiliVideoDanmaku(session.id, query.segment, {
-      cookie: session.authenticated ? env.BILIBILI_COOKIE || '' : '',
+      cookie: session.profileId
+        ? getCredentialCookie({ state, env, profileId: session.profileId })
+        : session.authenticated ? env.BILIBILI_COOKIE || '' : '',
       state,
       maxMessages: maxVideoMessages,
     });
@@ -25,7 +28,9 @@ export async function fetchCurrentDanmaku(session, query, options = {}) {
     if (!query.live) throw unsupportedMode();
     fetched = {
       messages: await fetchBilibiliLiveDanmaku(session.id, {
-        cookie: session.authenticated ? env.BILIBILI_COOKIE || '' : '',
+        cookie: session.profileId
+          ? getCredentialCookie({ state, env, profileId: session.profileId })
+          : session.authenticated ? env.BILIBILI_COOKIE || '' : '',
         maxMessages: maxLiveMessages,
       }),
     };

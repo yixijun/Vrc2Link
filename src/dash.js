@@ -137,12 +137,13 @@ export function trackExpiresAt(url) {
   return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 0;
 }
 
-export function makeDashRecord({ sourceUrl, authenticated, quality, result, tracks }) {
+export function makeDashRecord({ sourceUrl, authenticated, profileId, quality, result, tracks }) {
   return {
     platform: 'bilibili',
     type: 'video',
     sourceUrl,
     authenticated: authenticated === true,
+    profileId: profileId || '',
     quality: quality || tracks.video.quality,
     id: String(result.id || ''),
     cid: String(result.cid || ''),

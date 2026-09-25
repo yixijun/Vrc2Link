@@ -18,6 +18,7 @@ export function createSqliteState(path) {
       count INTEGER NOT NULL,
       expires_at INTEGER NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS cache_entries_expires_at_idx ON cache_entries(expires_at);
   `);
 
   const readCache = database.prepare(
@@ -63,6 +64,12 @@ export function createSqliteState(path) {
       writeCache.run(key, JSON.stringify(value), expiresAt(ttlSeconds));
       cleanupExpired(Date.now());
     },
+    deleteJson(key) {
+      deleteCache.run(key);
+    },
+    purgeExpired() {
+      cleanupExpired(Date.now(), true);
+    },
     increment(key, ttlSeconds) {
       const now = Date.now();
       const row = incrementCounter.get(key, now + seconds(ttlSeconds) * 1000, now, now);
@@ -90,6 +97,18 @@ export function createMemoryState() {
     },
     setJson(key, value, ttlSeconds) {
       cache.set(key, { value: structuredClone(value), expiresAt: expiresAt(ttlSeconds) });
+    },
+    deleteJson(key) {
+      cache.delete(key);
+    },
+    purgeExpired() {
+      const now = Date.now();
+      for (const [key, entry] of cache) {
+        if (entry.expiresAt <= now) cache.delete(key);
+      }
+      for (const [key, entry] of counters) {
+        if (entry.expiresAt <= now) counters.delete(key);
+      }
     },
     increment(key, ttlSeconds) {
       const now = Date.now();
