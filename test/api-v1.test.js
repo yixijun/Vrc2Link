@@ -24,6 +24,7 @@ test('v1 root and OpenAPI document expose the versioned contract', async () => {
         currentPlaylist: '/api/v1/playlists/current',
         credentials: '/api/v1/credentials',
         playbackTickets: '/api/v1/playback-tickets',
+        playbackTicketResolve: '/api/v1/playback-tickets/resolve',
       },
     },
     meta: { apiVersion: '1', requestId: 'request-v1-root' },

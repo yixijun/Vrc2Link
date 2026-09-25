@@ -110,6 +110,7 @@ async function dispatchRequest(request, dependencies, context) {
         play: '/api/v1/play',
         credentials: '/api/v1/credentials',
         playbackTickets: '/api/v1/playback-tickets',
+        playbackTicketResolve: '/api/v1/playback-tickets/resolve',
         currentPlaylist: '/api/v1/playlists/current',
       },
     });
@@ -137,6 +138,9 @@ async function dispatchRequest(request, dependencies, context) {
     }
     if (requestPath === '/api/v1/playback-tickets' && request.method === 'POST') {
       return await handleCreatePlaybackTicket(request, dependencies);
+    }
+    if (requestPath === '/api/v1/playback-tickets/resolve' && request.method === 'GET') {
+      return await handleCreatePlaybackTicketFromQuery(request, dependencies);
     }
     if (ticketPlayPath) {
       return await handlePlaybackTicketRequest(request, dependencies, context);
@@ -473,6 +477,58 @@ async function handleCreatePlaybackTicket(request, dependencies) {
   }, { headers: rateLimitHeaders });
 }
 
+// VRChat's Udon runtime cannot attach an Authorization header to
+// VRCStringDownloader requests. This narrow GET entry point is intended for
+// the local VizVid settings panel: it exchanges a user-entered credential for
+// a short-lived media ticket and returns only the ticket URL. The credential
+// never appears in the URL that VizVid synchronizes to other players.
+async function handleCreatePlaybackTicketFromQuery(request, dependencies) {
+  const env = dependencies.env || process.env;
+  const state = dependencies.state;
+  if (!state) throw new AppError(503, 'state_unavailable', 'Playback ticket storage is unavailable');
+  const requestUrl = new URL(request.url);
+  const key = String(requestUrl.searchParams.get('key') || '').trim();
+  const credential = authenticateCredential({ state, env, key });
+  const rateLimitHeaders = enforceRateLimits({
+    state, env, authenticated: true, suppliedKey: key, clientIp: dependencies.clientIp || 'unknown',
+  });
+  const rawUrl = extractTrailingQueryValue(request.url, 'url');
+  const sourceUrl = normalizeSourceUrl(rawUrl);
+  if (!sourceUrl || identifyPlatform(sourceUrl) !== 'bilibili') {
+    throw new AppError(400, 'invalid_bilibili_url', 'Playback tickets require a supported Bilibili video, live, or collection URL');
+  }
+  const mode = String(requestUrl.searchParams.get('mode') || 'auto');
+  if (!['auto', 'dash', 'single'].includes(mode)) {
+    throw new AppError(400, 'invalid_play_mode', 'mode must be auto, dash, or single');
+  }
+  const quality = String(requestUrl.searchParams.get('quality') || '').trim();
+  if (quality.length > 32 || /[^\w.-]/u.test(quality)) {
+    throw new AppError(400, 'invalid_quality', 'quality contains unsupported characters');
+  }
+  const ticket = createPlaybackTicket({
+    state,
+    env,
+    profileId: credential.profileId,
+    sourceUrl,
+    mode,
+    quality,
+  });
+  const configuredBase = String(env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/u, '');
+  const publicBase = configuredBase || DEFAULT_PUBLIC_BASE_URL;
+  const response = new Response(
+    `${publicBase}/api/v1/playback-tickets/${ticket.token}/manifest.mpd`,
+    {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-store',
+        ...rateLimitHeaders,
+      },
+    },
+  );
+  return withCommonHeaders(response);
+}
+
 async function handlePlaybackTicketRequest(request, dependencies, context) {
   const pathname = new URL(request.url).pathname;
   const match = pathname.match(/^\/api\/v1\/playback-tickets\/([A-Za-z0-9_-]{43})\/(?:play|manifest\.mpd)$/u);
@@ -616,6 +672,22 @@ function requestApiKey(request, url) {
     throw new AppError(401, 'invalid_authorization', 'Authorization must use the Bearer scheme');
   }
   return match[1];
+}
+
+// The source URL is deliberately the last query value. Reading the raw
+// request keeps collection links containing their own `&` parameters intact;
+// URLSearchParams would otherwise split them before the resolver sees them.
+function extractTrailingQueryValue(requestUrl, name) {
+  const marker = `${name}=`;
+  const query = String(requestUrl || '').split('?')[1] || '';
+  const markerIndex = query.indexOf(marker);
+  if (markerIndex < 0) return '';
+  const rawValue = query.slice(markerIndex + marker.length);
+  try {
+    return decodeURIComponent(rawValue);
+  } catch {
+    return rawValue;
+  }
 }
 
 async function normalizeApiV1Response(response, requestId) {

@@ -270,3 +270,27 @@ test('credential creation validates retention and the encryption master key', as
   assert.equal(missingMasterKey.status, 503);
   assert.equal((await missingMasterKey.json()).error.code, 'credential_encryption_unavailable');
 });
+
+test('Udon ticket exchange keeps the key out of the returned URL and preserves collection query text', async () => {
+  const state = createMemoryState();
+  const env = { CK_MASTER_KEY: MASTER_KEY, RATE_LIMIT_ANON_PER_MINUTE: '50' };
+  const clientIp = '203.0.113.77';
+  const create = await handleRequest(new Request('https://vrc2link.example/api/v1/credentials', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cookie: COOKIE, retentionDays: 1 }),
+  }), { state, env, clientIp });
+  const key = (await create.json()).data.key;
+  const source = 'https://www.bilibili.com/video/BVv1fixture?spm_id_from=333.1007&vd_source=fixture';
+  const requestUrl = 'https://vrc2link.example/api/v1/playback-tickets/resolve?mode=auto&quality=1080p&key=' +
+    encodeURIComponent(key) + '&url=' + encodeURIComponent(source);
+  const response = await handleRequest(new Request(requestUrl), { state, env, clientIp });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /^text\/plain/u);
+  const playUrl = await response.text();
+  assert.match(playUrl, /^https:\/\/vrc2link\.luonako\.cn\/api\/v1\/playback-tickets\/[A-Za-z0-9_-]{43}\/manifest\.mpd$/u);
+  assert.equal(playUrl.includes(key), false);
+  const ticket = state.getJson(`playback-ticket:${playUrl.split('/').slice(-2, -1)[0]}`);
+  assert.equal(ticket.sourceUrl, source);
+  assert.equal(ticket.quality, '1080p');
+});

@@ -142,6 +142,35 @@ paths:
           $ref: '#/components/responses/ApiError'
         '429':
           $ref: '#/components/responses/ApiError'
+  /api/v1/playback-tickets/resolve:
+    get:
+      tags: [Playback Tickets]
+      summary: Exchange a local Udon key for a short-lived playback URL
+      description: VRChat's VRCStringDownloader cannot set Authorization headers, so the local VizVid settings panel uses this narrow exchange endpoint. The key is accepted only for this request and the response contains an opaque MPD ticket URL without the key. Keep url as the final query parameter so collection links containing ampersands remain intact.
+      parameters:
+        - name: key
+          in: query
+          required: true
+          description: Personal Vrc2Link key entered in the local player settings. Do not share this request URL.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Mode'
+        - $ref: '#/components/parameters/Quality'
+        - $ref: '#/components/parameters/Url'
+      responses:
+        '200':
+          description: Opaque short-lived MPD playback ticket URL.
+          content:
+            text/plain:
+              schema:
+                type: string
+                format: uri
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '429':
+          $ref: '#/components/responses/ApiError'
   /api/v1/playback-tickets/{ticket}/play:
     get:
       tags: [Playback Tickets]

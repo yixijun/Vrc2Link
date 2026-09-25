@@ -559,6 +559,7 @@ const HOME_HTML = `<!doctype html>
             <div class="route-row"><span class="method">GET</span><code>/api/v1/play</code><span>302 播放跳转</span></div>
             <div class="route-row"><span class="method">POST</span><code>/api/v1/credentials</code><span>个人 CK 与 key</span></div>
             <div class="route-row"><span class="method">POST</span><code>/api/v1/playback-tickets</code><span>短期播放票据</span></div>
+            <div class="route-row"><span class="method">GET</span><code>/api/v1/playback-tickets/resolve</code><span>VizVid 本机票据交换</span></div>
             <div class="route-row"><span class="method">GET</span><code>/api/v1/playlists/current</code><span>当前合集清单</span></div>
             <div class="route-row"><span class="method">GET</span><code>/api/v1/playlists/current/items/N</code><span>合集条目播放</span></div>
             <div class="route-row"><span class="method">GET</span><code>/api/v1/openapi.yaml</code><span>OpenAPI 3.1 规范</span></div>
@@ -765,7 +766,7 @@ const HOME_HTML = `<!doctype html>
           </div>
           <div>
             <h3>鉴权请求</h3>
-            <p>请求头 <code>Authorization: Bearer YOUR_API_KEY</code> 与 <code>API_KEY</code> 一致时使用平台 Cookie；错误密钥返回 401。<code>?key=</code> 仅用于兼容旧链接。</p>
+            <p>请求头 <code>Authorization: Bearer YOUR_API_KEY</code> 与 <code>API_KEY</code> 一致时使用平台 Cookie；错误密钥返回 401。个人 CK key 不放进普通播放链接；仅供本机 VizVid 交换票据的 <code>/api/v1/playback-tickets/resolve</code> 接口使用查询参数。</p>
           </div>
         </div>
         <div class="config-guide">
