@@ -30,8 +30,10 @@ RATE_LIMIT_AUTH_PER_MINUTE=60
 RATE_LIMIT_IP_PER_MINUTE=120
 RATE_LIMIT_WINDOW_SECONDS=60
 TRUST_PROXY=false
-PLAYLIST_RESOLVER_PREFIX=https://vrc2link.luonako.cn/play?url=
+PLAYLIST_RESOLVER_PREFIX=https://vrc2link.luonako.cn/play?mode=auto&url=
 PLAYLIST_SESSION_TTL_SECONDS=21600
+PUBLIC_BASE_URL=https://vrc2link.example
+DASH_TICKET_TTL_SECONDS=3600
 ```
 
 Cookie 不需要挑选字段。在已登录的平台页面打开开发者工具，进入 Network，刷新页面，选择一个同平台请求，在 Request Headers 中复制完整的 `Cookie` 值，然后直接粘贴到对应等号后面。
@@ -104,6 +106,8 @@ GENERIC_RESOLVER_MAX_CONCURRENT=2
 | `GENERIC_RESOLVER_TIMEOUT_MS` | 单次通用解析超时毫秒数，默认 `20000` |
 | `GENERIC_RESOLVER_MAX_CONCURRENT` | 通用解析最大并发进程数，默认 `2` |
 | `PLAYLIST_SESSION_TTL_SECONDS` | 合集/歌单会话保留秒数，默认 `21600` |
+| `PUBLIC_BASE_URL` | 生成 DASH ticket URL 使用的公开站点根地址；未设置时使用当前请求 origin |
+| `DASH_TICKET_TTL_SECONDS` | DASH ticket 保留秒数，默认 `3600` |
 | `TRUST_PROXY` | 是否信任代理 IP 请求头，默认 `false` |
 
 修改配置后需要重启服务。不传 `key` 时使用匿名解析；传入正确的 `key` 时才会使用服务器 Cookie；错误的 `key` 返回 `401`。
@@ -149,7 +153,9 @@ GENERIC_RESOLVER_MAX_CONCURRENT=2
 
 ## `GET /play`
 
-选择播放流并返回 `302`。不传 `quality` 时选择最高可播放画质；指定画质不存在时返回 `422`，不会静默降级。
+`/play` 只返回到媒体或 MPD 的 `302` 跳转，不把合集 JSON 交给播放器。传入合集链接时，会直接播放合集当前项；没有当前项时播放第一项。合集清单由单独的 `/playlist` 接口提供。
+
+不传 `quality` 时，单流模式选择最高可播放画质；指定画质不存在时返回 `422`，不会静默降级。
 
 Bilibili 的 1080p、4K、8K 通常是 DASH 音视频分离流，而 `/play` 只跳转到一个带声音的可播放文件，不负责服务器合并。因此多数 B 站视频的直接播放上限是 720p。Cookie 只能解锁账号权限，不能把 DASH 转换成单文件；`/api` 中应以 `streams` 判断实际取得的直链。
 
@@ -157,6 +163,25 @@ Bilibili 的 1080p、4K、8K 通常是 DASH 音视频分离流，而 `/play` 只
 /play?url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV1xx411c7mD
 /play?key=YOUR_KEY&quality=1080p&url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV1xx411c7mD
 ```
+
+VizVid 使用 `mode=auto`：Bilibili 视频会请求 DASH 并跳转到 MPD，其他支持的平台继续跳转到单媒体流。Unity 世界默认请求 1080p；其他客户端可以省略画质，让服务器选择最高的 H.264/AAC DASH 轨道。指定的 Bilibili DASH 画质不可用时会明确报错。
+
+```text
+/play?mode=auto&quality=1080p&url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV1xx411c7mD
+```
+
+### DASH 单播放器验证
+
+Bilibili 1080p 及以上通常是 DASH 音视频分离流。`/play` 默认仍只选择带声音的单文件；需要验证标准 DASH 播放器时，使用明确的 `mode=dash`：
+
+```text
+/play?mode=dash&quality=1080p&url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV1xx411c7mD
+/api?mode=dash&quality=1080p&url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV1xx411c7mD
+```
+
+`/play?mode=dash` 会 302 到 `/dash/<ticket>/manifest.mpd`；`/api?mode=dash` 会返回同一个 ticket 对应的 `manifestUrl`、`videoUrl` 和 `audioUrl`。ticket 固定绑定同一视频、分 P、画质和 H.264/AAC 选轨；音视频入口只 302 到 Bilibili CDN。服务端不会下载、合流、转码或重新封装媒体。直链临近过期时，ticket 只会重新解析同一来源和选轨策略。
+
+当前 DASH 接口是能力验证入口，不代表标准 VRChat 客户端已经稳定支持。应分别记录 MPD 加载、单轨请求、播放、跳转、链接过期恢复，以及 Windows PC 与 Quest 的实际结果。
 
 支持的常用画质：`360p`、`480p`、`720p`、`1080p`、`4k`、`8k`、`original`、`128k`、`256k`、`320k`、`lossless`。抖音和快手当前返回分享页提供的 `original` 单文件流。
 
@@ -169,18 +194,18 @@ Bilibili 的 1080p、4K、8K 通常是 DASH 音视频分离流，而 `/play` 只
 /playlist?url=https%3A%2F%2Fmusic.163.com%2Fplaylist%3Fid%3D123456
 ```
 
-VRChat 当前没有向 Udon 开放运行时创建 `VRCUrl` 的能力，因此该接口供 Unity 编辑器在上传世界前导入列表。普通 `/play` 对单个视频或歌曲仍返回 `302`；传入播放列表时返回 VizVid 动态列表 JSON，供未来 SDK 开放该能力后使用。
+VRChat 当前没有向 Udon 开放运行时创建 `VRCUrl` 的能力，因此该接口供 Unity 编辑器在上传世界前导入列表。合集里的每个条目都指向 `/play`，播放时会直接重定向到对应媒体。
 
 ### VRChat 固定合集接口
 
 Unity 中的独立“合集 / 歌单”面板使用两个不需要运行时拼接 `VRCUrl` 的固定接口：
 
 ```text
-/api?playlist=1
-/api?playlistItem=0
+/playlist/current
+/playlist/current/item/0
 ```
 
-玩家先通过 `/play` 打开 Bilibili 视频、Bilibili 合集或网易云歌单。服务器按客户端 IP 保存最近的合集会话；`playlist=1` 返回标题、条目名称、当前索引和 `autoPlay`，`playlistItem=N` 解析第 N 项并返回 `302`。直接打开合集/歌单时 `autoPlay=true`，从正在播放的 Bilibili 视频发现合集时为 `false`，不会打断当前视频。
+玩家先通过 `/play` 打开 Bilibili 视频、Bilibili 合集或网易云歌单。服务器按客户端 IP 保存最近的合集会话；`/playlist/current` 返回标题、条目名称、当前索引和 `autoPlay`，`/playlist/current/item/N` 解析第 N 项并直接 `302` 到媒体或 MPD。直接打开合集/歌单时 `autoPlay=true`，从正在播放的 Bilibili 视频发现合集时为 `false`，不会打断当前视频。旧的 `/api?playlist=1` 和 `/api?playlistItem=N` 返回 `410`，提示使用新路径。
 
 ## 安全
 

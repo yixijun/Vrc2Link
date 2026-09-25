@@ -221,7 +221,7 @@ test('Netease playlist parser accepts the public result response shape', async (
 });
 
 
-test('/play keeps VizVid playlist JSON while fixed API endpoints expose and play the current list', async () => {
+test('/play redirects to a playlist item while fixed endpoints expose and play the current list', async () => {
   const state = createMemoryState();
   const resolvedUrls = [];
   const resolve = async (url) => {
@@ -248,17 +248,11 @@ test('/play keeps VizVid playlist JSON while fixed API endpoints expose and play
     new Request('http://localhost/play?url=https%3A%2F%2Fmusic.163.com%2Fplaylist%3Fid%3D789'),
     { state, resolve, clientIp: '203.0.113.10' },
   );
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get('content-type'), 'application/json; charset=utf-8');
-  assert.deepEqual(await response.json(), {
-    'Fixture playlist': [
-      { title: 'Track 1', url: 'https://vrc2link.example/play?url=song-1', playerIndex: 1 },
-      { title: 'Track 2', url: 'https://vrc2link.example/play?url=song-2', playerIndex: 1 },
-    ],
-  });
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get('location'), 'https://cdn.example/1.mp3');
 
   const manifestResponse = await handleRequest(
-    new Request('http://localhost/api?playlist=1'),
+    new Request('http://localhost/playlist/current'),
     { state, resolve, clientIp: '203.0.113.10' },
   );
   assert.equal(manifestResponse.status, 200);
@@ -268,18 +262,19 @@ test('/play keeps VizVid playlist JSON while fixed API endpoints expose and play
   });
 
   const itemResponse = await handleRequest(
-    new Request('http://localhost/api?playlistItem=1'),
+    new Request('http://localhost/playlist/current/item/1'),
     { state, resolve, clientIp: '203.0.113.10' },
   );
   assert.equal(itemResponse.status, 302);
   assert.equal(itemResponse.headers.get('location'), 'https://cdn.example/2.mp3');
   assert.deepEqual(resolvedUrls, [
     'https://music.163.com/playlist?id=789',
+    'https://music.163.com/song?id=1',
     'https://music.163.com/song?id=2',
   ]);
 
   const updatedManifestResponse = await handleRequest(
-    new Request('http://localhost/api?playlist=1'),
+    new Request('http://localhost/playlist/current'),
     { state, resolve, clientIp: '203.0.113.10' },
   );
   assert.equal(updatedManifestResponse.status, 200);
@@ -318,7 +313,7 @@ test('a played Bilibili video lazily exposes its UGC season without replacing pl
   assert.equal(playResponse.headers.get('location'), 'https://cdn.example/current.mp4');
 
   const manifestResponse = await handleRequest(
-    new Request('http://localhost/api?playlist=1'),
+    new Request('http://localhost/playlist/current'),
     { state, resolve, clientIp: '203.0.113.11' },
   );
   assert.equal(manifestResponse.status, 200);
@@ -340,6 +335,12 @@ test('a new play request hides the previous playlist while media resolution is p
         playlist: [{ title: 'Old item', sourceUrl: 'https://example.com/old-item' }],
       };
     }
+    if (url.includes('old-item')) {
+      return {
+        platform: 'bilibili', type: 'video', id: 'old-item',
+        streams: [{ quality: '720p', format: 'mp4', codec: 'avc', url: 'https://cdn.example/old.mp4' }],
+      };
+    }
     await newMediaPending;
     return {
       platform: 'bilibili', type: 'video', id: 'new-video',
@@ -358,7 +359,7 @@ test('a new play request hides the previous playlist while media resolution is p
   );
   await new Promise((resolveNow) => setTimeout(resolveNow, 0));
   const manifestResponse = await handleRequest(
-    new Request('http://localhost/api?playlist=1'),
+    new Request('http://localhost/playlist/current'),
     dependencies,
   );
 
@@ -391,7 +392,7 @@ test('a slow playlist probe cannot restore a session replaced by newer media', a
     dependencies,
   );
   const staleManifest = handleRequest(
-    new Request('http://localhost/api?playlist=1'),
+    new Request('http://localhost/playlist/current'),
     dependencies,
   );
   await new Promise((resolveNow) => setTimeout(resolveNow, 0));
@@ -405,7 +406,7 @@ test('a slow playlist probe cannot restore a session replaced by newer media', a
   assert.equal(staleResponse.status, 409);
   assert.equal((await staleResponse.json()).error.code, 'playlist_session_changed');
   const currentResponse = await handleRequest(
-    new Request('http://localhost/api?playlist=1'),
+    new Request('http://localhost/playlist/current'),
     dependencies,
   );
   assert.equal(currentResponse.status, 422);

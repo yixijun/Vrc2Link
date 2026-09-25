@@ -11,7 +11,7 @@ import { bilibiliQuality, bilibiliQnForQuality } from '../utils/quality.js';
 export async function parseVideo(videoId, options = {}) {
   const {
     cookie = '', quality: targetQuality, page = 1,
-    includeSeasonPlaylist = false, resolverPrefix = '',
+    includeSeasonPlaylist = false, resolverPrefix = '', mode = 'single',
   } = options;
   const avMatch = String(videoId).match(/^av(\d+)$/iu);
   const viewQuery = avMatch ? { aid: avMatch[1] } : { bvid: videoId };
@@ -82,7 +82,7 @@ export async function parseVideo(videoId, options = {}) {
     bvid,
     cid: String(cid),
     qn: String(qn),
-    fnval: '0',
+    fnval: mode === 'dash' ? '16' : '0',
     fnver: '0',
     fourk: '1',
     platform: 'html5',
@@ -103,7 +103,7 @@ export async function parseVideo(videoId, options = {}) {
   const currentQn = playResult.quality || 0;
   const quality = bilibiliQuality(currentQn);
 
-  if (playResult.durl?.length) {
+  if (mode !== 'dash' && playResult.durl?.length) {
     for (const d of playResult.durl) {
       streams.push({
         quality, duration: pageDuration,
@@ -116,17 +116,38 @@ export async function parseVideo(videoId, options = {}) {
     }
   }
 
-  if (playResult.dash && streams.length === 0) {
+  if (playResult.dash && (mode === 'dash' || streams.length === 0)) {
     for (const v of playResult.dash.video || []) {
+      const segmentBase = v.segment_base || v.SegmentBase || {};
       streams.push({
         quality: bilibiliQuality(v.id), format: 'mp4', codec: v.codecs || 'avc',
-        url: v.baseUrl || v.base_url, type: 'video-only', bandwidth: v.bandwidth || 0,
+        url: v.baseUrl || v.base_url,
+        backupUrls: v.backupUrl || v.backup_url || [],
+        type: 'video-only', bandwidth: v.bandwidth || 0,
+        trackId: v.id || 0,
+        width: v.width || 0,
+        height: v.height || 0,
+        frameRate: v.frameRate || v.frame_rate || '',
+        mimeType: v.mimeType || v.mime_type || 'video/mp4',
+        initialization: segmentBase.Initialization || segmentBase.initialization || '',
+        indexRange: segmentBase.indexRange || segmentBase.index_range || '',
+        startWithSap: v.startWithSap || v.start_with_sap || 1,
       });
     }
     for (const a of playResult.dash.audio || []) {
+      const segmentBase = a.segment_base || a.SegmentBase || {};
       streams.push({
         quality: `${Math.round((a.bandwidth || 0) / 1000)}k`, format: 'mp4', codec: a.codecs || 'aac',
-        url: a.baseUrl || a.base_url, type: 'audio-only', bandwidth: a.bandwidth || 0,
+        url: a.baseUrl || a.base_url,
+        backupUrls: a.backupUrl || a.backup_url || [],
+        type: 'audio-only', bandwidth: a.bandwidth || 0,
+        trackId: a.id || 0,
+        sampleRate: a.sampleRate || a.sample_rate || 0,
+        channels: a.channels || 0,
+        mimeType: a.mimeType || a.mime_type || 'audio/mp4',
+        initialization: segmentBase.Initialization || segmentBase.initialization || '',
+        indexRange: segmentBase.indexRange || segmentBase.index_range || '',
+        startWithSap: a.startWithSap || a.start_with_sap || 1,
       });
     }
   }

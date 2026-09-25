@@ -7,3 +7,4 @@ import './danmaku.test.js';
 import './generic.test.js';
 
 import './playlist.test.js';
+import './dash.test.js';

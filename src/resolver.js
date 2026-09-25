@@ -7,7 +7,7 @@ import { qualityRank } from './utils/quality.js';
 import { expandShortLink, extractId, identifyPlatform, normalizeSourceUrl } from './utils/url.js';
 
 export async function resolveMedia(rawUrl, options = {}) {
-  const { authenticated = false, cookies = {}, quality, generic = {} } = options;
+  const { authenticated = false, cookies = {}, quality, generic = {}, mode = 'single' } = options;
   if (!rawUrl?.trim()) {
     throw new AppError(400, 'missing_url', 'Missing required parameter: url');
   }
@@ -57,6 +57,7 @@ export async function resolveMedia(rawUrl, options = {}) {
       cookie, quality, sourceUrl: target,
       resolverPrefix: options.resolverPrefix || '',
       playlistMode: options.playlistMode === true,
+      mode,
     });
     if (!result.playlist?.length && !result.streams?.some((stream) => stream.url)) {
       throw new Error('No playable streams found');
@@ -162,6 +163,7 @@ function normalizeResult(result, authenticated, options = {}) {
   if (meta.liveStatus != null) normalized.liveStatus = meta.liveStatus;
   if (meta.webRid) normalized.webRid = String(meta.webRid);
   if (meta.shortId) normalized.shortId = String(meta.shortId);
+  if (meta.cid != null) normalized.cid = String(meta.cid);
   if (meta.pages?.length) {
     normalized.parts = meta.pages.map((part) => ({
       id: String(part.cid),
@@ -201,6 +203,8 @@ function normalizeStream(stream) {
   };
   const optionalFields = [
     'type', 'duration', 'size', 'bandwidth', 'bitrate', 'expiresAt', 'protocol',
+    'backupUrls', 'trackId', 'width', 'height', 'frameRate', 'mimeType',
+    'initialization', 'indexRange', 'startWithSap', 'sampleRate', 'channels',
   ];
   for (const field of optionalFields) {
     if (stream[field] != null) normalized[field] = stream[field];

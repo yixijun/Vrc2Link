@@ -138,3 +138,77 @@ test('parseVideo resolves an AV number through aid and returns its canonical BV 
   assert.equal(result.meta.id, 'BV17x411w7KC');
   assert.equal(result.streams[0].url, 'https://cdn.example/av.mp4');
 });
+
+test('parseVideo explicitly requests DASH and keeps track metadata', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    calls.push(url);
+    if (url.includes('/x/web-interface/view')) {
+      return Response.json({
+        code: 0,
+        data: {
+          bvid: 'BVdashfixture',
+          cid: 987654,
+          title: 'DASH fixture',
+          duration: 91,
+          owner: { name: 'Uploader' },
+          pages: [],
+        },
+      });
+    }
+    if (url.includes('/x/player/playurl')) {
+      return Response.json({
+        code: 0,
+        data: {
+          quality: 80,
+          accept_quality: [80, 64],
+          accept_description: ['1080P', '720P'],
+          durl: [{ url: 'https://cdn.example/should-not-be-used.mp4' }],
+          dash: {
+            video: [{
+              id: 80,
+              baseUrl: 'https://upos.example/video.m4s?deadline=1999999999',
+              backupUrl: ['https://backup.example/video.m4s'],
+              bandwidth: 4000000,
+              codecs: 'avc1.640028',
+              width: 1920,
+              height: 1080,
+              frame_rate: '30',
+              mime_type: 'video/mp4',
+              segment_base: { Initialization: '0-999', indexRange: '1000-2000' },
+            }],
+            audio: [{
+              id: 30280,
+              base_url: 'https://upos.example/audio.m4s?deadline=1999999999',
+              bandwidth: 192000,
+              codecs: 'mp4a.40.2',
+              sample_rate: 48000,
+              channels: 2,
+              segment_base: { Initialization: '0-500', indexRange: '501-1000' },
+            }],
+          },
+        },
+      });
+    }
+    return Response.json({ code: -404, message: 'wrong endpoint' });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const result = await parseVideo('BVdashfixture', { mode: 'dash', quality: '1080p' });
+  const playCall = new URL(calls.find((url) => url.includes('/x/player/playurl')));
+  const video = result.streams.find((stream) => stream.type === 'video-only');
+  const audio = result.streams.find((stream) => stream.type === 'audio-only');
+
+  assert.equal(playCall.searchParams.get('fnval'), '16');
+  assert.equal(result.meta.cid, 987654);
+  assert.equal(video.url, 'https://upos.example/video.m4s?deadline=1999999999');
+  assert.equal(video.initialization, '0-999');
+  assert.equal(video.indexRange, '1000-2000');
+  assert.deepEqual(video.backupUrls, ['https://backup.example/video.m4s']);
+  assert.equal(audio.codec, 'mp4a.40.2');
+  assert.equal(audio.sampleRate, 48000);
+  assert.equal(result.streams.some((stream) => stream.url.includes('should-not-be-used')), false);
+});

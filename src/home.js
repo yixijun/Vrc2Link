@@ -279,7 +279,7 @@ const HOME_HTML = `<!doctype html>
     legend { margin-bottom: 7px; }
     .segment {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(3, 1fr);
       padding: 3px;
       border-radius: 7px;
       background: rgba(118, 118, 128, 0.12);
@@ -530,6 +530,8 @@ const HOME_HTML = `<!doctype html>
           <div class="route-summary" aria-label="接口摘要">
             <div class="route-row"><span class="method">GET</span><code>/api</code><span>详细解析结果</span></div>
             <div class="route-row"><span class="method">GET</span><code>/play</code><span>302 播放跳转</span></div>
+            <div class="route-row"><span class="method">GET</span><code>/playlist/current</code><span>当前合集清单</span></div>
+            <div class="route-row"><span class="method">GET</span><code>/playlist/current/item/N</code><span>合集条目播放</span></div>
           </div>
         </div>
 
@@ -552,6 +554,8 @@ const HOME_HTML = `<!doctype html>
                 <label for="mode-api">详细解析</label>
                 <input id="mode-play" type="radio" name="mode" value="play">
                 <label for="mode-play">直接播放</label>
+                <input id="mode-dash" type="radio" name="mode" value="dash">
+                <label for="mode-dash">DASH 播放</label>
               </div>
             </fieldset>
 
@@ -618,7 +622,7 @@ const HOME_HTML = `<!doctype html>
             <p>302 Redirect</p>
           </div>
           <div class="endpoint-copy">
-            <p>选择一个带画面和声音的可播放单文件并直接 302 跳转。不指定画质时选择最高可播放画质。</p>
+            <p>直接 302 到媒体或 MPD。合集链接会播放当前项或第一项；合集清单使用独立的 <code>/playlist</code> 接口。不指定画质时选择最高可播放画质。</p>
             <table>
               <thead><tr><th>参数</th><th>必填</th><th>说明</th></tr></thead>
               <tbody>
@@ -632,6 +636,31 @@ const HOME_HTML = `<!doctype html>
               <code>/play</code> 只做一次 302，不在服务器上合并 DASH 音视频。目标画质只有分离流时返回 <code>quality_unavailable</code>，不会静默降级或返回无声视频。
             </div>
             <pre><code>GET /play?quality=720p&amp;url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV...</code></pre>
+          </div>
+        </article>
+
+        <article class="endpoint">
+          <div>
+            <span class="tag">GET</span>
+            <h3><code>/play?mode=dash</code></h3>
+            <p>MPD 302 Redirect</p>
+          </div>
+          <div class="endpoint-copy">
+            <p>为 Bilibili 视频生成固定 ticket，并把播放器送到包含原始音视频轨描述的 MPD。服务器只生成清单和重定向，不下载、合流或转码媒体。</p>
+            <table>
+              <thead><tr><th>参数</th><th>必填</th><th>说明</th></tr></thead>
+              <tbody>
+                <tr><td><code>url</code></td><td>是</td><td>Bilibili 视频地址或分享文本</td></tr>
+                <tr><td><code>quality</code></td><td>否</td><td>精确视频画质，例如 <code>1080p</code></td></tr>
+                <tr><td><code>key</code></td><td>否</td><td>启用服务器 Cookie 权限</td></tr>
+              </tbody>
+            </table>
+            <div class="compat-note">
+              <strong>当前状态</strong>
+              这是客户端能力验证入口。VizVid 的 AVPro 播放器已识别 <code>.mpd</code>；是否能在目标 VRChat 客户端稳定加载、跳转和同步，仍需实机记录，不能只以编辑器结果判定。
+            </div>
+            <p>Unity/VizVid 可使用 <code>/play?mode=auto</code>：Bilibili 视频请求 DASH，其他支持平台继续播放单流。</p>
+            <pre><code>GET /play?mode=dash&amp;quality=1080p&amp;url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV...</code></pre>
           </div>
         </article>
       </div>
@@ -876,16 +905,18 @@ TRUST_PROXY=false</code></pre>
 
     function buildRequestUrl() {
       if (!mediaUrl.value.trim()) return '';
-      const request = new URL('/' + selectedMode(), window.location.origin);
+      const dash = selectedMode() === 'dash';
+      const request = new URL(dash ? '/play' : '/' + selectedMode(), window.location.origin);
       request.searchParams.set('url', mediaUrl.value.trim());
       if (apiKey.value) request.searchParams.set('key', apiKey.value);
-      if (selectedMode() === 'play' && quality.value) request.searchParams.set('quality', quality.value);
+      if (dash) request.searchParams.set('mode', 'dash');
+      if ((selectedMode() === 'play' || dash) && quality.value) request.searchParams.set('quality', quality.value);
       return request.href;
     }
 
     function updatePreview() {
       updateMediaOptions();
-      quality.disabled = selectedMode() !== 'play';
+      quality.disabled = selectedMode() !== 'play' && selectedMode() !== 'dash';
       const requestUrl = buildRequestUrl();
       preview.textContent = requestUrl || '等待输入媒体链接';
     }

@@ -35,6 +35,7 @@ test('only the new API endpoints are exposed', async () => {
   assert.match(html, /id="paste-media"/);
   assert.match(html, /<code>\/api<\/code>/);
   assert.match(html, /<code>\/play<\/code>/);
+  assert.match(html, /<code>\/play\?mode=dash<\/code>/);
   assert.match(html, /DASH 音视频分离流/);
   assert.match(html, /为什么 1080p 会返回 422/);
   assert.match(html, /生产运行状态保存在本机 SQLite/);
@@ -124,6 +125,15 @@ test('only the new API endpoints are exposed', async () => {
   assert.equal(controls['media-url'].value, pastedText);
   assert.match(controls['platform-hint'].textContent, /网易云歌曲/);
   assert.equal(controls['paste-media'].textContent, '已粘贴');
+
+  controls['request-builder'].elements.mode.value = 'dash';
+  controls['media-url'].value = 'https://www.bilibili.com/video/BVdashfixture';
+  controls['request-builder'].listeners.input();
+  controls.quality.value = '1080p';
+  controls['request-builder'].listeners.input();
+  assert.equal(controls.quality.disabled, false);
+  assert.match(controls['request-preview'].textContent, /\/play\?url=.*mode=dash/u);
+  assert.match(controls['request-preview'].textContent, /quality=1080p/u);
 
   for (const path of ['/a', '/r', '/api/parse']) {
     const response = await handleRequest(new Request(`http://localhost${path}`));
