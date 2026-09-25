@@ -58,7 +58,8 @@ JSON 错误统一使用 `error` 与 `meta`，HTTP 状态码表达错误类别，
 | `POST /api/v1/credentials/current/rotate` | JSON 信封 | 轮换当前 key，旧 key 立即失效 |
 | `DELETE /api/v1/credentials/current` | JSON 信封 | 删除当前 CK 并撤销 key |
 | `POST /api/v1/playback-tickets` | JSON 信封 | 用 key 创建绑定具体 Bilibili 内容的短期播放票据 |
-| `GET /api/v1/playback-tickets/{ticket}/play` | `302 Location` | 通过票据播放固定视频或合集，不需要播放器携带 key |
+| `GET /api/v1/playback-tickets/{ticket}/manifest.mpd` | `200 application/dash+xml` | 通过票据直接返回 MPD，避免 VRChat 的 URL 解析器只选出视频轨 |
+| `GET /api/v1/playback-tickets/{ticket}/play` | `302 Location` | 兼容旧客户端的票据播放入口 |
 
 ### Bilibili CK 与短期播放票据
 
@@ -81,7 +82,7 @@ Content-Type: application/json
 {"url":"https://www.bilibili.com/video/BV…","mode":"auto","quality":"1080p"}
 ```
 
-响应中的 `data.playUrl` 是可粘贴到 VizVid 的完整地址。播放链接默认一小时内可启动（服务端可用 `PLAYBACK_TICKET_TTL_SECONDS` 调整，上限 24 小时），只绑定提交的视频或合集；播放时服务端从个人 CK profile 取 CK，因此 DASH 刷新、合集切歌和弹幕沿用同一 CK。启动后，内部 DASH 资源票据至少覆盖视频时长再加 5 分钟，最长 24 小时，避免一小时的启动票据在长视频播放中途失效。票据 URL 可被房间内其他人看到，但不包含 key，且不能改成其他视频或调用其他账号资源。删除 CK 会阻止后续票据解析和刷新；已发出的 CDN 直链在上游失效前可能继续播放。
+响应中的 `data.playUrl` 是以 `.mpd` 结尾、可粘贴到 VizVid 的完整地址。直接返回 MPD 可避免 VRChat 的 URL 解析器把分离音视频选择成只有视频的单轨地址。播放链接默认一小时内可启动（服务端可用 `PLAYBACK_TICKET_TTL_SECONDS` 调整，上限 24 小时），只绑定提交的视频或合集；播放时服务端从个人 CK profile 取 CK，因此 DASH 刷新、合集切歌和弹幕沿用同一 CK。启动后，内部 DASH 资源票据至少覆盖视频时长再加 5 分钟，最长 24 小时，避免一小时的启动票据在长视频播放中途失效。票据 URL 可被房间内其他人看到，但不包含 key，且不能改成其他视频或调用其他账号资源。删除 CK 会阻止后续票据解析和刷新；已发出的 CDN 直链在上游失效前可能继续播放。
 
 key 通过 `POST /api/v1/credentials/current/rotate` 轮换，通过 `DELETE /api/v1/credentials/current` 删除，两者都需要当前 key 的 Bearer 授权。轮换后旧 key 立即失效；播放票据会在自身过期前保持绑定原 profile。
 

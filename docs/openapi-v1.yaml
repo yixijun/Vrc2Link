@@ -156,6 +156,32 @@ paths:
           $ref: '#/components/responses/ApiError'
         '401':
           $ref: '#/components/responses/ApiError'
+  /api/v1/playback-tickets/{ticket}/manifest.mpd:
+    get:
+      tags: [Playback Tickets]
+      summary: Return the MPD bound to a ticket
+      description: Returns the DASH manifest directly. The `.mpd` URL lets VRChat hand the separate audio and video adaptations to AVPro instead of reducing the ticket to a video-only URL.
+      parameters:
+        - $ref: '#/components/parameters/PlaybackTicket'
+      responses:
+        '200':
+          description: DASH manifest for the ticket.
+          content:
+            application/dash+xml:
+              schema:
+                type: string
+        '302':
+          description: A single-file fallback when the ticket's requested mode cannot use DASH.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+                format: uri
+        '404':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
   /api/v1/media/resolve:
     get:
       tags: [Media]

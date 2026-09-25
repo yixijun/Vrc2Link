@@ -42,7 +42,7 @@ test('credential keys are one-time, hashed, encrypted, and authorize content-bou
   }), { state, env, clientIp, logger: (entry) => logs.push(entry) });
   assert.equal(ticketResponse.status, 200);
   const ticket = (await ticketResponse.json()).data;
-  assert.match(ticket.playUrl, /^https:\/\/vrc2link\.luonako\.cn\/api\/v1\/playback-tickets\/[A-Za-z0-9_-]{43}\/play$/u);
+  assert.match(ticket.playUrl, /^https:\/\/vrc2link\.luonako\.cn\/api\/v1\/playback-tickets\/[A-Za-z0-9_-]{43}\/manifest\.mpd$/u);
   assert.equal(ticket.playUrl.includes(credential.key), false);
   assert.equal(ticket.expiresInSeconds, 3600);
 
@@ -66,14 +66,14 @@ test('credential keys are one-time, hashed, encrypted, and authorize content-bou
     },
     logger: (entry) => logs.push(entry),
   });
-  assert.equal(playResponse.status, 302);
-  assert.match(playResponse.headers.get('location'), /^https:\/\/vrc2link\.luonako\.cn\/api\/v1\/dash\/[A-Za-z0-9_-]{32}\/manifest\.mpd$/u);
+  assert.equal(playResponse.status, 200);
+  assert.match(playResponse.headers.get('content-type'), /^application\/dash\+xml/u);
   assert.equal(playResponse.headers.get('X-Stream-Format'), 'mpd');
   assert.equal(playResponse.headers.get('X-Stream-Quality'), '1080p');
   assert.equal(resolveOptions[0].authenticated, true);
   assert.equal(resolveOptions[0].cookies.bilibili, COOKIE);
   assert.equal(logs.some((entry) => entry.path.includes(credential.key)), false);
-  assert.ok(logs.some((entry) => entry.path === '/api/v1/playback-tickets/:ticket/play'));
+  assert.ok(logs.some((entry) => entry.path === '/api/v1/playback-tickets/:ticket/manifest.mpd'));
   assert.equal(state.getJson(`danmaku:session:${hashIdentity(clientIp)}`).profileId, profileId);
 
   const rotation = await handleRequest(new Request('https://vrc2link.example/api/v1/credentials/current/rotate', {
@@ -133,19 +133,16 @@ test('DASH refresh keeps using the profile CK and checks revocation before servi
       };
     },
   };
-  const play = await handleRequest(new Request(playUrl), dependencies);
-  assert.equal(play.status, 302);
-  const manifestUrl = play.headers.get('location');
-  const manifest = await handleRequest(new Request(manifestUrl), dependencies);
+  const manifest = await handleRequest(new Request(playUrl), dependencies);
   assert.equal(manifest.status, 200);
-  assert.equal(calls.length, 2);
-  assert.equal(calls[1].options.cookies.bilibili, COOKIE);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].options.cookies.bilibili, COOKIE);
 
   const remove = await handleRequest(new Request('https://vrc2link.example/api/v1/credentials/current', {
     method: 'DELETE', headers: { Authorization: `Bearer ${key}` },
   }), { state, env, clientIp });
   assert.equal(remove.status, 200);
-  const rejected = await handleRequest(new Request(manifestUrl), dependencies);
+  const rejected = await handleRequest(new Request(playUrl), dependencies);
   assert.equal(rejected.status, 401);
   assert.equal((await rejected.json()).error.code, 'credential_revoked');
 });

@@ -294,6 +294,12 @@ async function dispatchRequest(request, dependencies, context) {
         ...rateLimitHeaders,
         ...(cacheKey ? { 'X-Cache': cacheHit ? 'HIT' : 'MISS' } : {}),
       };
+      if (url.pathname === '/play' && url.searchParams.get('response') === 'manifest') {
+        return withCommonHeaders(new Response(buildDashMpd(session.record, session.urls), {
+          status: 200,
+          headers: { 'Content-Type': 'application/dash+xml; charset=utf-8', ...headers },
+        }));
+      }
       if (url.pathname === '/play') {
         return withCommonHeaders(new Response(null, {
           status: 302,
@@ -456,7 +462,10 @@ async function handleCreatePlaybackTicket(request, dependencies) {
   const configuredBase = String(env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/u, '');
   const publicBase = configuredBase || DEFAULT_PUBLIC_BASE_URL;
   return jsonResponse({
-    playUrl: `${publicBase}/api/v1/playback-tickets/${ticket.token}/play`,
+    // Keep the public URL looking like a DASH manifest. VRChat's URL resolver
+    // otherwise asks yt-dlp for one best format and receives only the video
+    // adaptation, dropping the separate audio track before AVPro sees it.
+    playUrl: `${publicBase}/api/v1/playback-tickets/${ticket.token}/manifest.mpd`,
     expiresAt: ticket.expiresAt,
     expiresInSeconds: ticket.ttlSeconds,
     mode,
@@ -466,7 +475,8 @@ async function handleCreatePlaybackTicket(request, dependencies) {
 
 async function handlePlaybackTicketRequest(request, dependencies, context) {
   const pathname = new URL(request.url).pathname;
-  const match = pathname.match(/^\/api\/v1\/playback-tickets\/([A-Za-z0-9_-]{43})\/play$/u);
+  const match = pathname.match(/^\/api\/v1\/playback-tickets\/([A-Za-z0-9_-]{43})\/(?:play|manifest\.mpd)$/u);
+  const servesManifest = pathname.endsWith('/manifest.mpd');
   const ticket = getPlaybackTicket({ state: dependencies.state, token: match?.[1] });
   if (!ticket) throw new AppError(404, 'playback_ticket_not_found', 'Playback ticket is missing or expired');
   const env = dependencies.env || process.env;
@@ -477,6 +487,7 @@ async function handlePlaybackTicketRequest(request, dependencies, context) {
   replayUrl.searchParams.set('url', ticket.sourceUrl);
   replayUrl.searchParams.set('mode', ticket.mode || 'auto');
   if (ticket.quality) replayUrl.searchParams.set('quality', ticket.quality);
+  if (servesManifest) replayUrl.searchParams.set('response', 'manifest');
   const headers = new Headers(request.headers);
   headers.delete('authorization');
   headers.delete('cookie');
@@ -488,12 +499,12 @@ async function handlePlaybackTicketRequest(request, dependencies, context) {
 }
 
 function isPlaybackTicketPath(pathname) {
-  return /^\/api\/v1\/playback-tickets\/[A-Za-z0-9_-]{43}\/play$/u.test(String(pathname || ''));
+  return /^\/api\/v1\/playback-tickets\/[A-Za-z0-9_-]{43}\/(?:play|manifest\.mpd)$/u.test(String(pathname || ''));
 }
 
 function safeLogPath(pathname) {
   return String(pathname || '')
-    .replace(/(\/api\/v1\/playback-tickets\/)[A-Za-z0-9_-]{43}(\/play)/u, '$1:ticket$2')
+    .replace(/(\/api\/v1\/playback-tickets\/)[A-Za-z0-9_-]{43}(\/(?:play|manifest\.mpd))/u, '$1:ticket$2')
     .replace(/(\/(?:api\/v1\/)?dash\/)[A-Za-z0-9_-]{32}(\/)/u, '$1:ticket$2');
 }
 
