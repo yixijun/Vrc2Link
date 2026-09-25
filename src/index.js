@@ -642,13 +642,7 @@ function usesDashForResult(requestedMode, result, sourceUrl, quality) {
   } catch {
     return !hasPlayableSingleStream(result);
   }
-
-  try {
-    selectPlayableStream(result, quality);
-    return false;
-  } catch {
-    return !hasPlayableSingleStream(result);
-  }
+  return true;
 }
 
 function hasPlayableSingleStream(result, quality) {

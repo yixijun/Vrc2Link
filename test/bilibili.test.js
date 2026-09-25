@@ -92,6 +92,39 @@ test('parseVideo requests HTML5 streams for direct UGC playback', async (t) => {
   assert.equal(new URL(playCall).searchParams.get('platform'), 'html5');
 });
 
+test('parseVideo supplies AAC metadata when Bilibili omits DASH audio fields', async (t) => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.includes('/x/web-interface/view')) {
+      return Response.json({
+        code: 0,
+        data: { cid: 123, title: 'DASH audio metadata fixture', duration: 60, owner: { name: 'Uploader' }, pages: [] },
+      });
+    }
+    if (url.includes('/x/player/playurl')) {
+      return Response.json({
+        code: 0,
+        data: {
+          quality: 80,
+          dash: {
+            video: [{ id: 80, baseUrl: 'https://cdn.example/video.m4s', codecs: 'avc1.640028' }],
+            audio: [{ id: 30280, baseUrl: 'https://cdn.example/audio.m4s', codecs: 'mp4a.40.2', bandwidth: 192000 }],
+          },
+        },
+      });
+    }
+    return Response.json({ code: -404, message: 'wrong endpoint' });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const result = await parseVideo('BVdashmetadata');
+  const audio = result.streams.find((stream) => stream.type === 'audio-only');
+
+  assert.equal(audio.sampleRate, 44100);
+  assert.equal(audio.channels, 2);
+});
+
 test('parseVideo resolves an AV number through aid and returns its canonical BV id', async (t) => {
   const originalFetch = globalThis.fetch;
   const calls = [];
@@ -272,7 +305,7 @@ test('parseVideo auto mode requests DASH while retaining direct streams as fallb
   assert.ok(result.streams.some((stream) => stream.type === 'audio-only'));
 });
 
-test('parseVideo auto mode requests a single-file fallback when the DASH response has no durl', async (t) => {
+test('parseVideo auto mode keeps the DASH tracks when the DASH response has no durl', async (t) => {
   const originalFetch = globalThis.fetch;
   const calls = [];
 
@@ -304,27 +337,16 @@ test('parseVideo auto mode requests a single-file fallback when the DASH respons
         },
       });
     }
-    if (url.pathname === '/x/player/playurl' && url.searchParams.get('fnval') === '0') {
-      return Response.json({
-        code: 0,
-        data: {
-          quality: 64,
-          durl: [{ url: 'https://cdn.example/fallback-720p.mp4' }],
-        },
-      });
-    }
     return Response.json({ code: -404, message: 'wrong endpoint' });
   };
   t.after(() => { globalThis.fetch = originalFetch; });
 
   const result = await parseVideo('BVsinglefallback', { mode: 'auto', quality: '1080p' });
   const playCalls = calls.filter((url) => url.pathname === '/x/player/playurl');
-  const singleFallback = result.streams.find((stream) => stream.url === 'https://cdn.example/fallback-720p.mp4');
-
-  assert.equal(playCalls.length, 2);
-  assert.deepEqual(playCalls.map((url) => url.searchParams.get('fnval')), ['16', '0']);
-  assert.deepEqual(playCalls.map((url) => url.searchParams.get('qn')), ['80', '80']);
-  assert.equal(singleFallback.quality, '720p');
+  assert.equal(playCalls.length, 1);
+  assert.deepEqual(playCalls.map((url) => url.searchParams.get('fnval')), ['16']);
+  assert.deepEqual(playCalls.map((url) => url.searchParams.get('qn')), ['80']);
+  assert.equal(result.streams.some((stream) => stream.url === 'https://cdn.example/fallback-720p.mp4'), false);
   assert.ok(result.streams.some((stream) => stream.type === 'video-only' && stream.quality === '1080p'));
   assert.ok(result.streams.some((stream) => stream.type === 'audio-only'));
 });

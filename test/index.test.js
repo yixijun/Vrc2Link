@@ -294,7 +294,7 @@ test('/play mode=auto falls back to a Bilibili direct stream when DASH is missin
   assert.equal(playRequests[0].searchParams.get('fnval'), '16');
 });
 
-test('/play mode=auto prefers same-quality muxed streams when DASH is also available', async (t) => {
+test('/play mode=auto keeps DASH when a muxed stream is also available', async (t) => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
@@ -345,8 +345,8 @@ test('/play mode=auto prefers same-quality muxed streams when DASH is also avail
   ), { state: createMemoryState(), env: { PUBLIC_BASE_URL: 'http://localhost' } });
 
   assert.equal(response.status, 302);
-  assert.equal(response.headers.get('location'), 'https://cdn.example/auto-fallback.mp4');
-  assert.equal(response.headers.get('x-stream-format'), 'mp4');
+  assert.match(response.headers.get('location'), /^http:\/\/localhost\/dash\/[A-Za-z0-9_-]{32}\/manifest\.mpd$/u);
+  assert.equal(response.headers.get('x-stream-format'), 'mpd');
 });
 
 test('/play proxies Bilibili streams for Quest clients', async (t) => {

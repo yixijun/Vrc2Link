@@ -67,9 +67,9 @@ test('credential keys are one-time, hashed, encrypted, and authorize content-bou
     logger: (entry) => logs.push(entry),
   });
   assert.equal(playResponse.status, 302);
-  assert.equal(playResponse.headers.get('location'), 'https://cdn.example/muxed-720p.mp4');
-  assert.equal(playResponse.headers.get('X-Stream-Format'), 'mp4');
-  assert.equal(playResponse.headers.get('X-Stream-Quality'), '720p');
+  assert.match(playResponse.headers.get('location'), /^https:\/\/vrc2link\.luonako\.cn\/api\/v1\/dash\/[A-Za-z0-9_-]{32}\/manifest\.mpd$/u);
+  assert.equal(playResponse.headers.get('X-Stream-Format'), 'mpd');
+  assert.equal(playResponse.headers.get('X-Stream-Quality'), '1080p');
   assert.equal(resolveOptions[0].authenticated, true);
   assert.equal(resolveOptions[0].cookies.bilibili, COOKIE);
   assert.equal(logs.some((entry) => entry.path.includes(credential.key)), false);

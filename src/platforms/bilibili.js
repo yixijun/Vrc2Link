@@ -98,36 +98,13 @@ export async function parseVideo(videoId, options = {}) {
     throw new Error(`Failed to get play URL: ${detail} (${playPayload?.code ?? 'no code'})`);
   }
 
-  let directResult = playResult;
-  if (mode === 'auto' && !playResult.durl?.length) {
-    const directParams = new URLSearchParams({
-      bvid,
-      cid: String(cid),
-      qn: String(qn),
-      fnval: '0',
-      fnver: '0',
-      fourk: '1',
-      platform: 'html5',
-      type: 'mp4',
-      high_quality: '1',
-    });
-    try {
-      const directResponse = await fetchWithRetry(`${playEndpoint}?${directParams}`, { platform: 'bilibili', cookie });
-      const directPayload = await directResponse.json();
-      const candidate = isPgc ? directPayload?.result : directPayload?.data;
-      if (directPayload?.code === 0 && candidate?.durl?.length) directResult = candidate;
-    } catch {
-      // Keep the DASH result if the optional single-file request fails.
-    }
-  }
-
   // Build streams
   const streams = [];
   const currentQn = playResult.quality || 0;
-  const directQuality = bilibiliQuality(directResult.quality || currentQn);
+  const directQuality = bilibiliQuality(currentQn);
 
-  if (mode !== 'dash' && directResult.durl?.length) {
-    for (const d of directResult.durl) {
+  if (mode !== 'dash' && playResult.durl?.length) {
+    for (const d of playResult.durl) {
       streams.push({
         quality: directQuality, duration: pageDuration,
         format: d.url.includes('.m3u8') ? 'm3u8' : d.url.includes('.flv') ? 'flv' : 'mp4',
@@ -165,8 +142,11 @@ export async function parseVideo(videoId, options = {}) {
         backupUrls: a.backupUrl || a.backup_url || [],
         type: 'audio-only', bandwidth: a.bandwidth || 0,
         trackId: a.id || 0,
-        sampleRate: a.sampleRate || a.sample_rate || 0,
-        channels: a.channels || 0,
+        // Bilibili omits these fields on the HTML5 DASH response. The AAC-LC
+        // track served by this endpoint is 44.1 kHz stereo; keep the values in
+        // the generated MPD so AVPro can select and route the audio adaptation.
+        sampleRate: a.sampleRate || a.sample_rate || 44100,
+        channels: a.channels || 2,
         mimeType: a.mimeType || a.mime_type || 'audio/mp4',
         initialization: segmentBase.Initialization || segmentBase.initialization || '',
         indexRange: segmentBase.indexRange || segmentBase.index_range || '',
@@ -192,10 +172,14 @@ export async function parsePlaylist(playlist, options = {}) {
   const { cookie = '', resolverPrefix = '' } = options;
   const entries = await fetchPlaylistEntries(playlist, cookie);
   if (!entries.length) throw new Error(`Bilibili playlist is empty or unavailable: ${playlist.id}`);
+  const selectedBvid = String(playlist.bvid || '');
+  const selectedIndex = selectedBvid
+    ? entries.findIndex((entry) => String(entry.bvid || '') === selectedBvid)
+    : 0;
   return {
     platform: 'bilibili',
     type: 'playlist',
-    currentIndex: 0,
+    currentIndex: selectedIndex >= 0 ? selectedIndex : 0,
     meta: { id: playlist.id, title: playlist.title || `Bilibili ${playlist.kind || 'playlist'} ${playlist.id}`, author: playlist.author || '', cover: '', duration: 0 },
     playlist: entries.map((entry, index) => {
       const source = `https://www.bilibili.com/video/${entry.bvid}${entry.page && entry.page > 1 ? `?p=${entry.page}` : ''}`;
