@@ -18,6 +18,7 @@ import {
   updateDashTicket,
 } from './dash.js';
 import { identifyPlatform, normalizeSourceUrl } from './utils/url.js';
+import { qualityRank } from './utils/quality.js';
 import {
   authenticateCredential,
   createCredential,
@@ -634,11 +635,18 @@ function usesDashForResult(requestedMode, result, sourceUrl, quality) {
   const platform = result?.platform || identifyPlatform(normalizeSourceUrl(sourceUrl || ''));
   if (platform !== 'bilibili' || result?.type !== 'video') return false;
 
+  let dashTracks;
   try {
-    selectDashTracks(result, quality);
-    return true;
+    dashTracks = selectDashTracks(result, quality);
   } catch {
     return !hasPlayableSingleStream(result, quality);
+  }
+
+  try {
+    const singleStream = selectPlayableStream(result, quality);
+    return qualityRank(singleStream.quality) < qualityRank(dashTracks.video.quality);
+  } catch {
+    return true;
   }
 }
 

@@ -180,3 +180,53 @@ test('v1 DASH links stay inside the versioned API namespace', async () => {
   assert.equal(response.status, 302);
   assert.match(response.headers.get('location'), /^http:\/\/localhost\/api\/v1\/dash\/[A-Za-z0-9_-]{32}\/manifest\.mpd$/u);
 });
+
+test('auto playback uses a muxed stream when it preserves the selected DASH video quality', async () => {
+  const response = await handleRequest(
+    new Request(`http://localhost/api/v1/play?mode=auto&url=${encodeURIComponent(SOURCE_URL)}`),
+    {
+      state: createMemoryState(),
+      env: { PUBLIC_BASE_URL: 'http://localhost' },
+      resolve: async () => ({
+        platform: 'bilibili',
+        type: 'video',
+        id: 'BVv1fixture',
+        duration: 10,
+        streams: [
+          { quality: '1080p', format: 'mp4', codec: 'avc', url: 'https://cdn.example/muxed.mp4' },
+          { type: 'video-only', quality: '1080p', codec: 'avc1.640028', url: 'https://cdn.example/video.m4s' },
+          { type: 'audio-only', quality: '192k', codec: 'mp4a.40.2', url: 'https://cdn.example/audio.m4s' },
+        ],
+      }),
+    },
+  );
+
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get('location'), 'https://cdn.example/muxed.mp4');
+  assert.equal(response.headers.get('X-Stream-Quality'), '1080p');
+});
+
+test('auto playback keeps DASH when the available muxed stream is lower quality', async () => {
+  const response = await handleRequest(
+    new Request(`http://localhost/api/v1/play?mode=auto&url=${encodeURIComponent(SOURCE_URL)}`),
+    {
+      state: createMemoryState(),
+      env: { PUBLIC_BASE_URL: 'http://localhost' },
+      resolve: async () => ({
+        platform: 'bilibili',
+        type: 'video',
+        id: 'BVv1fixture',
+        cid: '1',
+        duration: 10,
+        streams: [
+          { quality: '720p', format: 'mp4', codec: 'avc', url: 'https://cdn.example/muxed.mp4' },
+          { type: 'video-only', quality: '1080p', codec: 'avc1.640028', url: 'https://cdn.example/video.m4s' },
+          { type: 'audio-only', quality: '192k', codec: 'mp4a.40.2', url: 'https://cdn.example/audio.m4s' },
+        ],
+      }),
+    },
+  );
+
+  assert.equal(response.status, 302);
+  assert.match(response.headers.get('location'), /^http:\/\/localhost\/api\/v1\/dash\/[A-Za-z0-9_-]{32}\/manifest\.mpd$/u);
+});
