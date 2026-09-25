@@ -164,7 +164,7 @@ Bilibili 的 1080p、4K、8K 通常是 DASH 音视频分离流，而 `/play` 只
 /play?key=YOUR_KEY&quality=1080p&url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV1xx411c7mD
 ```
 
-VizVid 使用 `mode=auto`：Bilibili 视频会请求 DASH 并跳转到 MPD，其他支持的平台继续跳转到单媒体流。Unity 世界默认请求 1080p；其他客户端可以省略画质，让服务器选择最高的 H.264/AAC DASH 轨道。指定的 Bilibili DASH 画质不可用时会明确报错。
+VizVid 使用 `mode=auto`：Bilibili 视频优先跳转到兼容的 DASH MPD；上游只提供单文件流或没有可用 DASH 轨时，会回落到匹配所选画质的单文件流。其他支持的平台继续跳转到单媒体流。Unity 世界默认请求 1080p；其他客户端可以省略画质，让服务器选择最高的 H.264/AAC DASH 轨道。指定画质不可用时会明确报错，不会静默换画质。
 
 ```text
 /api/v1/play?mode=auto&quality=1080p&url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV1xx411c7mD

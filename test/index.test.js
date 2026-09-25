@@ -245,6 +245,104 @@ test('/play redirects to the exact requested quality', async () => {
   assert.equal((await unavailable.json()).error.code, 'quality_unavailable');
 });
 
+test('/play mode=auto falls back to a Bilibili direct stream when DASH is missing', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const playRequests = [];
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === '/x/web-interface/view') {
+      return Response.json({
+        code: 0,
+        data: {
+          bvid: 'BVautofallback',
+          cid: 987,
+          title: 'Auto fallback fixture',
+          duration: 60,
+          pages: [{ cid: 987, page: 1, part: 'Fixture', duration: 60 }],
+        },
+      });
+    }
+    if (url.pathname === '/x/player/playurl') {
+      playRequests.push(url);
+      return Response.json({
+        code: 0,
+        data: {
+          quality: 80,
+          accept_quality: [80, 64],
+          accept_description: ['1080P', '720P'],
+          durl: [{ url: 'https://cdn.example/auto-fallback.mp4' }],
+        },
+      });
+    }
+    return Response.json({ code: -404, message: 'unexpected URL' });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const response = await handleRequest(new Request(
+    `http://localhost/play?mode=auto&url=${encodeURIComponent('https://www.bilibili.com/video/BVautofallback')}`,
+  ));
+
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get('location'), 'https://cdn.example/auto-fallback.mp4');
+  assert.equal(playRequests.length, 1);
+  assert.equal(playRequests[0].searchParams.get('fnval'), '16');
+});
+
+test('/play mode=auto prefers playable DASH tracks when both formats are returned', async (t) => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === '/x/web-interface/view') {
+      return Response.json({
+        code: 0,
+        data: {
+          bvid: 'BVautodashfixture',
+          cid: 654,
+          title: 'Auto DASH fixture',
+          duration: 60,
+          pages: [{ cid: 654, page: 1, part: 'Fixture', duration: 60 }],
+        },
+      });
+    }
+    if (url.pathname === '/x/player/playurl') {
+      return Response.json({
+        code: 0,
+        data: {
+          quality: 80,
+          accept_quality: [80],
+          durl: [{ url: 'https://cdn.example/auto-fallback.mp4' }],
+          dash: {
+            video: [{
+              id: 80,
+              baseUrl: 'https://upos.example/video.m4s',
+              bandwidth: 4000000,
+              codecs: 'avc1.640028',
+              width: 1920,
+              height: 1080,
+            }],
+            audio: [{
+              id: 30280,
+              baseUrl: 'https://upos.example/audio.m4s',
+              bandwidth: 192000,
+              codecs: 'mp4a.40.2',
+            }],
+          },
+        },
+      });
+    }
+    return Response.json({ code: -404, message: 'unexpected URL' });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const response = await handleRequest(new Request(
+    `http://localhost/play?mode=auto&url=${encodeURIComponent('https://www.bilibili.com/video/BVautodashfixture')}`,
+  ), { state: createMemoryState() });
+
+  assert.equal(response.status, 302);
+  assert.match(response.headers.get('location'), /^http:\/\/localhost\/dash\/[A-Za-z0-9_-]{32}\/manifest\.mpd$/u);
+  assert.equal(response.headers.get('x-stream-format'), 'mpd');
+});
+
 test('/play proxies Bilibili streams for Quest clients', async (t) => {
   const originalFetch = globalThis.fetch;
   const upstreamUrl = 'https://upos.example/video.mp4?signature=1';

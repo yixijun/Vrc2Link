@@ -215,11 +215,11 @@ async function dispatchRequest(request, dependencies, context) {
       context.platform = result.platform || context.platform;
     }
 
-    const dashMode = usesDashForResult(requestedMode, result, playbackSourceUrl);
     const playbackQuality = requestedMode === 'auto' &&
       !(result.platform === 'bilibili' && result.type === 'video')
       ? undefined
       : quality;
+    const dashMode = usesDashForResult(requestedMode, result, playbackSourceUrl, playbackQuality);
     if (dashMode) {
       const session = createDashSession({
         request, env, state, rawUrl: playbackSourceUrl, authenticated, quality: playbackQuality, result,
@@ -426,14 +426,28 @@ function playbackModeForSource(requestedMode, sourceUrl, knownPlatform) {
   if (requestedMode === 'dash') return 'dash';
   if (requestedMode !== 'auto') return 'single';
   const platform = knownPlatform || identifyPlatform(normalizeSourceUrl(sourceUrl || ''));
-  return platform === 'bilibili' ? 'dash' : 'single';
+  return platform === 'bilibili' ? 'auto' : 'single';
 }
 
-function usesDashForResult(requestedMode, result, sourceUrl) {
+function usesDashForResult(requestedMode, result, sourceUrl, quality) {
   if (requestedMode === 'dash') return true;
   if (requestedMode !== 'auto') return false;
   const platform = result?.platform || identifyPlatform(normalizeSourceUrl(sourceUrl || ''));
-  return platform === 'bilibili' && result?.type === 'video';
+  if (platform !== 'bilibili' || result?.type !== 'video') return false;
+
+  try {
+    selectDashTracks(result, quality);
+    return true;
+  } catch {
+    return !hasPlayableSingleStream(result, quality);
+  }
+}
+
+function hasPlayableSingleStream(result, quality) {
+  return (result?.streams || []).some((stream) =>
+    stream.url && stream.type !== 'video-only' && stream.type !== 'audio-only' &&
+    (!quality || stream.quality === quality),
+  );
 }
 
 function parseDashAsset(pathname) {
@@ -804,7 +818,7 @@ async function resolvePlaylistItemResponse(playlistResult, index, dependencies, 
     rawUrl: sourceUrl,
     result,
   });
-  if (usesDashForResult(requestedMode, result, sourceUrl)) {
+  if (usesDashForResult(requestedMode, result, sourceUrl, quality)) {
     const session = createDashSession({
       request: dependencies.request,
       env,

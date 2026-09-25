@@ -212,3 +212,62 @@ test('parseVideo explicitly requests DASH and keeps track metadata', async (t) =
   assert.equal(audio.sampleRate, 48000);
   assert.equal(result.streams.some((stream) => stream.url.includes('should-not-be-used')), false);
 });
+
+test('parseVideo auto mode requests DASH while retaining direct streams as fallback', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    calls.push(url);
+    if (url.includes('/x/web-interface/view')) {
+      return Response.json({
+        code: 0,
+        data: {
+          bvid: 'BVautofixture',
+          cid: 987654,
+          title: 'Auto fixture',
+          duration: 91,
+          owner: { name: 'Uploader' },
+          pages: [],
+        },
+      });
+    }
+    if (url.includes('/x/player/playurl')) {
+      return Response.json({
+        code: 0,
+        data: {
+          quality: 80,
+          accept_quality: [80],
+          durl: [{ url: 'https://cdn.example/fallback.mp4' }],
+          dash: {
+            video: [{
+              id: 80,
+              baseUrl: 'https://upos.example/video.m4s',
+              bandwidth: 4000000,
+              codecs: 'avc1.640028',
+              width: 1920,
+              height: 1080,
+            }],
+            audio: [{
+              id: 30280,
+              baseUrl: 'https://upos.example/audio.m4s',
+              bandwidth: 192000,
+              codecs: 'mp4a.40.2',
+            }],
+          },
+        },
+      });
+    }
+    return Response.json({ code: -404, message: 'wrong endpoint' });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const result = await parseVideo('BVautofixture', { mode: 'auto' });
+  const playCall = new URL(calls.find((url) => url.includes('/x/player/playurl')));
+
+  assert.equal(playCall.searchParams.get('fnval'), '16');
+  assert.ok(result.streams.some((stream) => stream.url === 'https://cdn.example/fallback.mp4' && !stream.type));
+  assert.ok(result.streams.some((stream) => stream.type === 'video-only'));
+  assert.ok(result.streams.some((stream) => stream.type === 'audio-only'));
+});

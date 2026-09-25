@@ -57,7 +57,7 @@ JSON 错误统一使用 `error` 与 `meta`，HTTP 状态码表达错误类别，
 
 ### 媒体解析与播放
 
-`url` 是必填的 HTTP(S) 平台链接或分享文本，必须按 URL 查询参数规则编码。`mode` 可选值为 `single`、`dash`、`auto`，默认 `single`。`quality` 是可选的精确画质。`auto` 会为 Bilibili 视频选择 DASH，为其他受支持平台选择单流。指定画质不可用时返回 `422`，不静默降级。
+`url` 是必填的 HTTP(S) 平台链接或分享文本，必须按 URL 查询参数规则编码。`mode` 可选值为 `single`、`dash`、`auto`，默认 `single`。`quality` 是可选的精确画质。`auto` 会优先为 Bilibili 视频选择兼容的 DASH 音视频轨；上游没有可用 DASH 轨时，回落到匹配所选画质的单文件流。其他受支持平台使用单流。指定画质不可用时返回 `422`，不会静默切换到其他画质。
 
 ```text
 GET /api/v1/media/resolve?url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV...

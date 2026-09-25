@@ -82,7 +82,7 @@ export async function parseVideo(videoId, options = {}) {
     bvid,
     cid: String(cid),
     qn: String(qn),
-    fnval: mode === 'dash' ? '16' : '0',
+    fnval: mode === 'dash' || mode === 'auto' ? '16' : '0',
     fnver: '0',
     fourk: '1',
     platform: 'html5',
@@ -116,7 +116,7 @@ export async function parseVideo(videoId, options = {}) {
     }
   }
 
-  if (playResult.dash && (mode === 'dash' || streams.length === 0)) {
+  if (playResult.dash && (mode === 'dash' || mode === 'auto' || streams.length === 0)) {
     for (const v of playResult.dash.video || []) {
       const segmentBase = v.segment_base || v.SegmentBase || {};
       streams.push({

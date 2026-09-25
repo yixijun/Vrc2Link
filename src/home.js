@@ -660,7 +660,7 @@ const HOME_HTML = `<!doctype html>
               <strong>当前状态</strong>
               这是客户端能力验证入口。VizVid 的 AVPro 播放器已识别 <code>.mpd</code>；是否能在目标 VRChat 客户端稳定加载、跳转和同步，仍需实机记录，不能只以编辑器结果判定。
             </div>
-            <p>Unity/VizVid 使用 <code>/api/v1/play?mode=auto</code>：Bilibili 视频请求 DASH，其他支持的平台使用单流。</p>
+            <p>Unity/VizVid 使用 <code>/api/v1/play?mode=auto</code>：Bilibili 视频优先使用 DASH；上游没有可用 DASH 轨时回落到单文件流，其他支持的平台使用单流。</p>
             <pre><code>GET /api/v1/play?mode=dash&amp;quality=1080p&amp;url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV...</code></pre>
           </div>
         </article>
