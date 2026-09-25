@@ -479,6 +479,16 @@ async function handlePlaybackTicketRequest(request, dependencies, context) {
   const servesManifest = pathname.endsWith('/manifest.mpd');
   const ticket = getPlaybackTicket({ state: dependencies.state, token: match?.[1] });
   if (!ticket) throw new AppError(404, 'playback_ticket_not_found', 'Playback ticket is missing or expired');
+  // VRChat invokes yt-dlp with browser-like headers before handing a URL to
+  // AVPro. If yt-dlp parses this MPD it chooses only the video adaptation.
+  // Returning a probe failure makes the resolver keep the original .mpd URL;
+  // AVPro then requests the same URL and receives the complete manifest.
+  if (servesManifest && isDashResolverProbe(request)) {
+    return withCommonHeaders(new Response(null, {
+      status: 403,
+      headers: { 'Cache-Control': 'no-store', 'X-Vrc2Link-Mpd-Probe': 'direct' },
+    }));
+  }
   const env = dependencies.env || process.env;
   const cookie = getCredentialCookie({ state: dependencies.state, env, profileId: ticket.profileId });
   const replayUrl = new URL(request.url);
@@ -496,6 +506,12 @@ async function handlePlaybackTicketRequest(request, dependencies, context) {
     ...dependencies,
     credentialProfile: { profileId: ticket.profileId, cookie },
   }, context);
+}
+
+function isDashResolverProbe(request) {
+  const userAgent = request.headers.get('user-agent') || '';
+  const accept = request.headers.get('accept') || '';
+  return /Chrome\/\d[\s\S]*Safari\//u.test(userAgent) && /text\/html/u.test(accept);
 }
 
 function isPlaybackTicketPath(pathname) {

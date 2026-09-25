@@ -46,6 +46,14 @@ test('credential keys are one-time, hashed, encrypted, and authorize content-bou
   assert.equal(ticket.playUrl.includes(credential.key), false);
   assert.equal(ticket.expiresInSeconds, 3600);
 
+  const resolverProbe = await handleRequest(new Request(ticket.playUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 Chrome/146.0.0.0 Safari/537.36',
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    },
+  }), { state, env, clientIp });
+  assert.equal(resolverProbe.status, 403);
+
   const playResponse = await handleRequest(new Request(ticket.playUrl), {
     state,
     env,
