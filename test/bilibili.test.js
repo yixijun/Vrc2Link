@@ -271,3 +271,60 @@ test('parseVideo auto mode requests DASH while retaining direct streams as fallb
   assert.ok(result.streams.some((stream) => stream.type === 'video-only'));
   assert.ok(result.streams.some((stream) => stream.type === 'audio-only'));
 });
+
+test('parseVideo auto mode requests a single-file fallback when the DASH response has no durl', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    calls.push(url);
+    if (url.pathname === '/x/web-interface/view') {
+      return Response.json({
+        code: 0,
+        data: {
+          bvid: 'BVsinglefallback',
+          cid: 987654,
+          title: 'Single fallback fixture',
+          duration: 91,
+          owner: { name: 'Uploader' },
+          pages: [],
+        },
+      });
+    }
+    if (url.pathname === '/x/player/playurl' && url.searchParams.get('fnval') === '16') {
+      return Response.json({
+        code: 0,
+        data: {
+          quality: 80,
+          dash: {
+            video: [{ id: 80, baseUrl: 'https://upos.example/video.m4s', codecs: 'avc1.640028', width: 1920, height: 1080 }],
+            audio: [{ id: 30280, baseUrl: 'https://upos.example/audio.m4s', codecs: 'mp4a.40.2', bandwidth: 192000 }],
+          },
+        },
+      });
+    }
+    if (url.pathname === '/x/player/playurl' && url.searchParams.get('fnval') === '0') {
+      return Response.json({
+        code: 0,
+        data: {
+          quality: 64,
+          durl: [{ url: 'https://cdn.example/fallback-720p.mp4' }],
+        },
+      });
+    }
+    return Response.json({ code: -404, message: 'wrong endpoint' });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const result = await parseVideo('BVsinglefallback', { mode: 'auto', quality: '1080p' });
+  const playCalls = calls.filter((url) => url.pathname === '/x/player/playurl');
+  const singleFallback = result.streams.find((stream) => stream.url === 'https://cdn.example/fallback-720p.mp4');
+
+  assert.equal(playCalls.length, 2);
+  assert.deepEqual(playCalls.map((url) => url.searchParams.get('fnval')), ['16', '0']);
+  assert.deepEqual(playCalls.map((url) => url.searchParams.get('qn')), ['80', '80']);
+  assert.equal(singleFallback.quality, '720p');
+  assert.ok(result.streams.some((stream) => stream.type === 'video-only' && stream.quality === '1080p'));
+  assert.ok(result.streams.some((stream) => stream.type === 'audio-only'));
+});

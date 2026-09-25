@@ -57,12 +57,19 @@ test('credential keys are one-time, hashed, encrypted, and authorize content-bou
         type: 'video',
         id: 'BVv1fixture',
         authenticated: options.authenticated,
-        streams: [{ quality: '1080p', format: 'mp4', codec: 'avc', url: 'https://cdn.example/video.mp4' }],
+        streams: [
+          { quality: '720p', format: 'mp4', codec: 'avc', url: 'https://cdn.example/muxed-720p.mp4' },
+          { type: 'video-only', quality: '1080p', format: 'mp4', codec: 'avc1.640028', url: 'https://cdn.example/video.m4s' },
+          { type: 'audio-only', quality: '192k', format: 'mp4', codec: 'mp4a.40.2', url: 'https://cdn.example/audio.m4s' },
+        ],
       };
     },
     logger: (entry) => logs.push(entry),
   });
   assert.equal(playResponse.status, 302);
+  assert.equal(playResponse.headers.get('location'), 'https://cdn.example/muxed-720p.mp4');
+  assert.equal(playResponse.headers.get('X-Stream-Format'), 'mp4');
+  assert.equal(playResponse.headers.get('X-Stream-Quality'), '720p');
   assert.equal(resolveOptions[0].authenticated, true);
   assert.equal(resolveOptions[0].cookies.bilibili, COOKIE);
   assert.equal(logs.some((entry) => entry.path.includes(credential.key)), false);

@@ -98,15 +98,38 @@ export async function parseVideo(videoId, options = {}) {
     throw new Error(`Failed to get play URL: ${detail} (${playPayload?.code ?? 'no code'})`);
   }
 
+  let directResult = playResult;
+  if (mode === 'auto' && !playResult.durl?.length) {
+    const directParams = new URLSearchParams({
+      bvid,
+      cid: String(cid),
+      qn: String(qn),
+      fnval: '0',
+      fnver: '0',
+      fourk: '1',
+      platform: 'html5',
+      type: 'mp4',
+      high_quality: '1',
+    });
+    try {
+      const directResponse = await fetchWithRetry(`${playEndpoint}?${directParams}`, { platform: 'bilibili', cookie });
+      const directPayload = await directResponse.json();
+      const candidate = isPgc ? directPayload?.result : directPayload?.data;
+      if (directPayload?.code === 0 && candidate?.durl?.length) directResult = candidate;
+    } catch {
+      // Keep the DASH result if the optional single-file request fails.
+    }
+  }
+
   // Build streams
   const streams = [];
   const currentQn = playResult.quality || 0;
-  const quality = bilibiliQuality(currentQn);
+  const directQuality = bilibiliQuality(directResult.quality || currentQn);
 
-  if (mode !== 'dash' && playResult.durl?.length) {
-    for (const d of playResult.durl) {
+  if (mode !== 'dash' && directResult.durl?.length) {
+    for (const d of directResult.durl) {
       streams.push({
-        quality, duration: pageDuration,
+        quality: directQuality, duration: pageDuration,
         format: d.url.includes('.m3u8') ? 'm3u8' : d.url.includes('.flv') ? 'flv' : 'mp4',
         codec: 'avc',
         url: d.url,

@@ -18,7 +18,6 @@ import {
   updateDashTicket,
 } from './dash.js';
 import { identifyPlatform, normalizeSourceUrl } from './utils/url.js';
-import { qualityRank } from './utils/quality.js';
 import {
   authenticateCredential,
   createCredential,
@@ -336,7 +335,10 @@ async function dispatchRequest(request, dependencies, context) {
       });
     }
 
-    const stream = selectPlayableStream(result, playbackQuality);
+    const streamQuality = requestedMode === 'auto' && result.platform === 'bilibili' && result.type === 'video'
+      ? undefined
+      : playbackQuality;
+    const stream = selectPlayableStream(result, streamQuality);
     if (url.pathname === '/play') {
       bindPlaylistSession({
         state, env, clientIp: dependencies.clientIp || 'unknown', rawUrl, authenticated, profileId,
@@ -635,18 +637,17 @@ function usesDashForResult(requestedMode, result, sourceUrl, quality) {
   const platform = result?.platform || identifyPlatform(normalizeSourceUrl(sourceUrl || ''));
   if (platform !== 'bilibili' || result?.type !== 'video') return false;
 
-  let dashTracks;
   try {
-    dashTracks = selectDashTracks(result, quality);
+    selectDashTracks(result, quality);
   } catch {
-    return !hasPlayableSingleStream(result, quality);
+    return !hasPlayableSingleStream(result);
   }
 
   try {
-    const singleStream = selectPlayableStream(result, quality);
-    return qualityRank(singleStream.quality) < qualityRank(dashTracks.video.quality);
+    selectPlayableStream(result, quality);
+    return false;
   } catch {
-    return true;
+    return !hasPlayableSingleStream(result);
   }
 }
 

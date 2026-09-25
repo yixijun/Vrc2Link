@@ -206,7 +206,7 @@ test('auto playback uses a muxed stream when it preserves the selected DASH vide
   assert.equal(response.headers.get('X-Stream-Quality'), '1080p');
 });
 
-test('auto playback keeps DASH when the available muxed stream is lower quality', async () => {
+test('auto playback prefers a muxed stream when DASH offers higher resolution', async () => {
   const response = await handleRequest(
     new Request(`http://localhost/api/v1/play?mode=auto&url=${encodeURIComponent(SOURCE_URL)}`),
     {
@@ -228,5 +228,7 @@ test('auto playback keeps DASH when the available muxed stream is lower quality'
   );
 
   assert.equal(response.status, 302);
-  assert.match(response.headers.get('location'), /^http:\/\/localhost\/api\/v1\/dash\/[A-Za-z0-9_-]{32}\/manifest\.mpd$/u);
+  assert.equal(response.headers.get('location'), 'https://cdn.example/muxed.mp4');
+  assert.equal(response.headers.get('X-Stream-Format'), 'mp4');
+  assert.equal(response.headers.get('X-Stream-Quality'), '720p');
 });
