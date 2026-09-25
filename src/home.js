@@ -1129,7 +1129,11 @@ TRUST_PROXY=false</code></pre>
             body: JSON.stringify({ url: ticketUrlInput.value.trim(), mode: 'auto', quality: ticketQualityInput.value }),
           });
           playbackUrl = data.playUrl;
-          show(ticketOutput, '把下面的完整链接粘贴到 VizVid。它不含 key，将于 ' + new Date(data.expiresAt).toLocaleString() + ' 过期。' + String.fromCharCode(10) + playbackUrl, 'success');
+          const ttlSeconds = Number(data.expiresInSeconds);
+          const ttlLabel = Number.isFinite(ttlSeconds) && ttlSeconds > 0
+            ? ttlSeconds + ' 秒'
+            : '服务端未返回';
+          show(ticketOutput, '把下面的完整链接粘贴到 VizVid。它不含 key；服务端返回的有效期为 ' + ttlLabel + '，到期时间为 ' + new Date(data.expiresAt).toLocaleString() + '。' + String.fromCharCode(10) + playbackUrl, 'success');
           copyTicketButton.disabled = false;
         } catch (error) {
           show(ticketOutput, error.message, 'error');
