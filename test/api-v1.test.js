@@ -162,6 +162,7 @@ test('v1 DASH links stay inside the versioned API namespace', async () => {
     new Request(`http://localhost/api/v1/play?mode=dash&quality=1080p&url=${encodeURIComponent(SOURCE_URL)}`),
     {
       state: createMemoryState(),
+      env: { PUBLIC_BASE_URL: 'http://localhost' },
       resolve: async () => ({
         platform: 'bilibili',
         type: 'video',

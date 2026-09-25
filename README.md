@@ -32,7 +32,7 @@ RATE_LIMIT_WINDOW_SECONDS=60
 TRUST_PROXY=false
 PLAYLIST_RESOLVER_PREFIX=https://vrc2link.luonako.cn/api/v1/play?mode=auto&url=
 PLAYLIST_SESSION_TTL_SECONDS=21600
-PUBLIC_BASE_URL=https://vrc2link.example
+PUBLIC_BASE_URL=https://vrc2link.luonako.cn
 DASH_TICKET_TTL_SECONDS=3600
 CK_MASTER_KEY=64-位十六进制随机密钥
 PLAYBACK_TICKET_TTL_SECONDS=3600
@@ -122,7 +122,7 @@ GENERIC_RESOLVER_MAX_CONCURRENT=2
 | `GENERIC_RESOLVER_TIMEOUT_MS` | 单次通用解析超时毫秒数，默认 `20000` |
 | `GENERIC_RESOLVER_MAX_CONCURRENT` | 通用解析最大并发进程数，默认 `2` |
 | `PLAYLIST_SESSION_TTL_SECONDS` | 合集/歌单会话保留秒数，默认 `21600` |
-| `PUBLIC_BASE_URL` | 生成 DASH ticket URL 使用的公开站点根地址；未设置时使用当前请求 origin |
+| `PUBLIC_BASE_URL` | 生成播放票据和 DASH URL 使用的公开站点根地址；未设置时默认为 `https://vrc2link.luonako.cn`，自托管时可覆盖 |
 | `DASH_TICKET_TTL_SECONDS` | DASH ticket 保留秒数，默认 `3600` |
 | `CK_MASTER_KEY` | 自助 CK 功能必需的 64 位十六进制 AES-256 主密钥，只能保存在服务端配置中 |
 | `PLAYBACK_TICKET_TTL_SECONDS` | CK 播放票据有效期，默认 `3600` 秒，最大 `86400` 秒 |

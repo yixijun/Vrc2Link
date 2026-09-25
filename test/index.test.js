@@ -342,7 +342,7 @@ test('/play mode=auto prefers playable DASH tracks when both formats are returne
 
   const response = await handleRequest(new Request(
     `http://localhost/play?mode=auto&url=${encodeURIComponent('https://www.bilibili.com/video/BVautodashfixture')}`,
-  ), { state: createMemoryState() });
+  ), { state: createMemoryState(), env: { PUBLIC_BASE_URL: 'http://localhost' } });
 
   assert.equal(response.status, 302);
   assert.match(response.headers.get('location'), /^http:\/\/localhost\/dash\/[A-Za-z0-9_-]{32}\/manifest\.mpd$/u);

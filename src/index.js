@@ -2,6 +2,7 @@ import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
 import { AppError } from './errors.js';
+import { DEFAULT_PUBLIC_BASE_URL } from './config.js';
 import { fetchCurrentDanmaku } from './danmaku.js';
 import { homePage } from './home.js';
 import { enforceDanmakuRateLimit, enforceRateLimits, hashIdentity } from './rate-limit.js';
@@ -450,7 +451,7 @@ async function handleCreatePlaybackTicket(request, dependencies) {
     quality,
   });
   const configuredBase = String(env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/u, '');
-  const publicBase = configuredBase || new URL(request.url).origin;
+  const publicBase = configuredBase || DEFAULT_PUBLIC_BASE_URL;
   return jsonResponse({
     playUrl: `${publicBase}/api/v1/playback-tickets/${ticket.token}/play`,
     expiresAt: ticket.expiresAt,

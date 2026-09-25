@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 
+import { DEFAULT_PUBLIC_BASE_URL } from './config.js';
 import { AppError } from './errors.js';
 import { qualityRank } from './utils/quality.js';
 
@@ -88,7 +89,7 @@ export function updateDashTicket(state, ticket, current, next, ttlSeconds) {
 export function buildDashUrls(request, env, ticket) {
   const configuredBase = String(env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/u, '');
   const requestUrl = new URL(request.url);
-  const base = configuredBase || requestUrl.origin;
+  const base = configuredBase || DEFAULT_PUBLIC_BASE_URL;
   const prefix = requestUrl.pathname.startsWith('/api/v1/') ? '/api/v1/dash' : '/dash';
   const path = `${prefix}/${encodeURIComponent(ticket)}`;
   return {

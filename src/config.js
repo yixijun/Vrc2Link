@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+export const DEFAULT_PUBLIC_BASE_URL = 'https://vrc2link.luonako.cn';
+
 const CONFIG_KEYS = [
   'PORT', 'API_KEY', 'BILIBILI_COOKIE', 'NETEASE_COOKIE', 'DOUYIN_COOKIE', 'KUAISHOU_COOKIE',
   'SQLITE_PATH', 'CACHE_TTL_SECONDS', 'TRUST_PROXY',

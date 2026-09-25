@@ -42,7 +42,7 @@ test('credential keys are one-time, hashed, encrypted, and authorize content-bou
   }), { state, env, clientIp, logger: (entry) => logs.push(entry) });
   assert.equal(ticketResponse.status, 200);
   const ticket = (await ticketResponse.json()).data;
-  assert.match(ticket.playUrl, /^https:\/\/vrc2link\.example\/api\/v1\/playback-tickets\/[A-Za-z0-9_-]{43}\/play$/u);
+  assert.match(ticket.playUrl, /^https:\/\/vrc2link\.luonako\.cn\/api\/v1\/playback-tickets\/[A-Za-z0-9_-]{43}\/play$/u);
   assert.equal(ticket.playUrl.includes(credential.key), false);
   assert.equal(ticket.expiresInSeconds, 3600);
 

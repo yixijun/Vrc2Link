@@ -63,7 +63,7 @@ test('DASH API creates a ticket and serves MPD and paired redirect endpoints', a
     state,
     resolve,
     clientIp: '203.0.113.40',
-    env: { DASH_TICKET_TTL_SECONDS: '3600' },
+    env: { DASH_TICKET_TTL_SECONDS: '3600', PUBLIC_BASE_URL: 'http://localhost' },
   };
 
   const response = await handleRequest(
@@ -109,6 +109,27 @@ test('DASH API creates a ticket and serves MPD and paired redirect endpoints', a
   assert.equal(play.status, 302);
   assert.equal(play.headers.get('x-stream-format'), 'mpd');
   assert.match(play.headers.get('location'), /\/manifest\.mpd$/u);
+});
+
+test('DASH links use the canonical HTTPS domain when reverse proxy requests arrive by IP', async () => {
+  const dependencies = {
+    state: createMemoryState(),
+    resolve: async () => dashMedia(),
+    clientIp: '203.0.113.42',
+    env: {},
+  };
+  const play = await handleRequest(
+    new Request(`http://119.29.60.122/api/v1/play?mode=dash&quality=1080p&url=${encodeURIComponent(SOURCE_URL)}`),
+    dependencies,
+  );
+
+  assert.equal(play.status, 302);
+  const manifestUrl = play.headers.get('location');
+  assert.equal(new URL(manifestUrl).origin, 'https://vrc2link.luonako.cn');
+  assert.match(new URL(manifestUrl).pathname, /^\/api\/v1\/dash\/[A-Za-z0-9_-]{32}\/manifest\.mpd$/u);
+
+  const manifest = await handleRequest(new Request(manifestUrl), dependencies);
+  assert.equal(manifest.status, 200);
 });
 
 test('DASH ticket refresh re-resolves only the same source and quality', async () => {
