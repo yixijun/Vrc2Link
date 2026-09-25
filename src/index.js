@@ -1,4 +1,5 @@
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 
 import { AppError } from './errors.js';
 import { fetchCurrentDanmaku } from './danmaku.js';
@@ -19,10 +20,10 @@ import { identifyPlatform, normalizeSourceUrl } from './utils/url.js';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type',
   'Access-Control-Expose-Headers': [
-    'X-Request-Id', 'X-Cache', 'X-RateLimit-Limit', 'X-RateLimit-Remaining',
+    'API-Version', 'X-Request-Id', 'X-Cache', 'X-RateLimit-Limit', 'X-RateLimit-Remaining',
     'X-RateLimit-Reset', 'Retry-After', 'X-Stream-Quality', 'X-Stream-Format',
   ].join(', '),
 };
@@ -32,7 +33,11 @@ const dashRefreshLocks = new Map();
 export async function handleRequest(request, dependencies = {}) {
   const startedAt = performance.now();
   const requestId = dependencies.requestId || randomUUID();
-  const context = { platform: null, cacheHit: null };
+  const context = {
+    platform: null,
+    cacheHit: null,
+    apiVersioned: isApiV1Path(new URL(request.url).pathname),
+  };
   let response;
 
   try {
@@ -41,6 +46,10 @@ export async function handleRequest(request, dependencies = {}) {
     response = errorResponse(new AppError(500, 'internal_error', 'Internal server error'));
   }
 
+  if (context.apiVersioned) {
+    response = await normalizeApiV1Response(response, requestId);
+    response.headers.set('API-Version', '1');
+  }
   response.headers.set('X-Request-Id', requestId);
   writeRequestLog(dependencies.logger, {
     event: 'http_request',
@@ -60,17 +69,39 @@ async function dispatchRequest(request, dependencies, context) {
   const env = dependencies.env || process.env;
   const resolve = dependencies.resolve || resolveMedia;
   const state = dependencies.state;
-  const url = new URL(request.url);
-  const dashAsset = parseDashAsset(url.pathname);
+  const incomingUrl = new URL(request.url);
+  context.apiVersioned = isApiV1Path(incomingUrl.pathname);
 
   if (request.method === 'OPTIONS') {
     return withCommonHeaders(new Response(null, { status: 204 }));
   }
-  if (request.method !== 'GET' && !(request.method === 'HEAD' && dashAsset)) {
+  if (request.method !== 'GET' && !(request.method === 'HEAD' && isDashAssetPath(incomingUrl.pathname))) {
     return errorResponse(new AppError(405, 'method_not_allowed', 'Only GET is supported'), {
-      Allow: 'GET, OPTIONS',
+      Allow: isDashAssetPath(incomingUrl.pathname) ? 'GET, HEAD, OPTIONS' : 'GET, OPTIONS',
     });
   }
+
+  if (incomingUrl.pathname === '/api/v1' || incomingUrl.pathname === '/api/v1/') {
+    return jsonResponse({
+      service: 'Vrc2Link',
+      apiVersion: '1',
+      links: {
+        openapi: '/api/v1/openapi.yaml',
+        mediaResolve: '/api/v1/media/resolve',
+        play: '/api/v1/play',
+        currentPlaylist: '/api/v1/playlists/current',
+      },
+    });
+  }
+  if (incomingUrl.pathname === '/api/v1/openapi.yaml') {
+    const document = await readFile(new URL('../docs/openapi-v1.yaml', import.meta.url), 'utf8');
+    return withCommonHeaders(new Response(document, {
+      headers: { 'Content-Type': 'application/yaml; charset=utf-8', 'Cache-Control': 'public, max-age=300' },
+    }));
+  }
+
+  const url = normalizeApiV1Url(incomingUrl);
+  const dashAsset = parseDashAsset(url.pathname);
 
   let rateLimitHeaders = {};
   try {
@@ -95,13 +126,14 @@ async function dispatchRequest(request, dependencies, context) {
       throw new AppError(404, 'not_found', 'Endpoint not found');
     }
 
-    const authenticated = authenticate(url.searchParams.get('key'), env.API_KEY);
+    const suppliedKey = requestApiKey(request, url);
+    const authenticated = authenticate(suppliedKey, env.API_KEY);
     rateLimitHeaders = state
       ? enforceRateLimits({
           state,
           env,
           authenticated,
-          suppliedKey: url.searchParams.get('key'),
+          suppliedKey,
           clientIp: dependencies.clientIp || 'unknown',
         })
       : {};
@@ -149,7 +181,7 @@ async function dispatchRequest(request, dependencies, context) {
       result = await resolve(rawUrl, {
         authenticated, cookies, quality, generic, playlistMode,
         mode: sourceMode,
-        resolverPrefix: env.PLAYLIST_RESOLVER_PREFIX || 'https://vrc2link.luonako.cn/play?mode=auto&url=',
+        resolverPrefix: env.PLAYLIST_RESOLVER_PREFIX || 'https://vrc2link.luonako.cn/api/v1/play?mode=auto&url=',
       });
       if (cacheKey) state.setJson(cacheKey, result, positiveInteger(env.CACHE_TTL_SECONDS, 300));
     }
@@ -178,7 +210,7 @@ async function dispatchRequest(request, dependencies, context) {
         generic,
         playlistMode: false,
         mode: itemMode,
-        resolverPrefix: env.PLAYLIST_RESOLVER_PREFIX || 'https://vrc2link.luonako.cn/play?mode=auto&url=',
+        resolverPrefix: env.PLAYLIST_RESOLVER_PREFIX || 'https://vrc2link.luonako.cn/api/v1/play?mode=auto&url=',
       });
       context.platform = result.platform || context.platform;
     }
@@ -298,6 +330,89 @@ async function dispatchRequest(request, dependencies, context) {
     }
     return errorResponse(new AppError(500, 'internal_error', 'Internal server error'));
   }
+}
+
+function isApiV1Path(pathname) {
+  return pathname === '/api/v1' || pathname.startsWith('/api/v1/');
+}
+
+function isDashAssetPath(pathname) {
+  return /^\/(?:api\/v1\/)?dash\/[A-Za-z0-9_-]{32}\/(?:manifest\.mpd|video|audio)$/u.test(pathname);
+}
+
+function normalizeApiV1Url(url) {
+  if (!isApiV1Path(url.pathname)) return url;
+  const path = url.pathname;
+  const fixedRoutes = new Map([
+    ['/api/v1/media/resolve', '/api'],
+    ['/api/v1/play', '/play'],
+    ['/api/v1/playlists/resolve', '/playlist'],
+    ['/api/v1/playlists/current', '/playlist/current'],
+  ]);
+  if (fixedRoutes.has(path)) {
+    url.pathname = fixedRoutes.get(path);
+    return url;
+  }
+
+  const itemMatch = path.match(/^\/api\/v1\/playlists\/current\/items\/([^/]+)$/u);
+  if (itemMatch) {
+    url.pathname = `/playlist/current/item/${itemMatch[1]}`;
+    return url;
+  }
+
+  const segmentMatch = path.match(/^\/api\/v1\/danmaku\/current\/video\/segments\/(\d+)$/u);
+  if (segmentMatch) {
+    url.pathname = '/danmaku/current';
+    url.searchParams.set('segment', segmentMatch[1]);
+    url.searchParams.set('live', '0');
+    return url;
+  }
+  if (path === '/api/v1/danmaku/current/live') {
+    url.pathname = '/danmaku/current';
+    url.searchParams.set('live', '1');
+    return url;
+  }
+
+  if (path.startsWith('/api/v1/dash/')) {
+    url.pathname = path.slice('/api/v1'.length);
+  }
+  return url;
+}
+
+function requestApiKey(request, url) {
+  const authorization = request.headers.get('authorization');
+  if (!authorization) return url.searchParams.get('key');
+  const match = authorization.match(/^Bearer\s+([^\s]+)$/iu);
+  if (!match) {
+    throw new AppError(401, 'invalid_authorization', 'Authorization must use the Bearer scheme');
+  }
+  return match[1];
+}
+
+async function normalizeApiV1Response(response, requestId) {
+  if (!response.headers.get('content-type')?.includes('application/json')) return response;
+
+  let body;
+  try {
+    body = await response.json();
+  } catch {
+    body = null;
+  }
+  const meta = { apiVersion: '1', requestId };
+  const normalized = response.ok
+    ? { data: body, meta }
+    : {
+        error: body?.error || { code: 'http_error', message: response.statusText || 'Request failed' },
+        meta,
+      };
+  const headers = new Headers(response.headers);
+  headers.delete('Content-Length');
+  headers.set('Content-Type', 'application/json; charset=utf-8');
+  return withCommonHeaders(new Response(JSON.stringify(normalized, null, 2), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  }));
 }
 
 function shouldProxyStream(request, result, env) {
@@ -604,7 +719,7 @@ async function handleCurrentPlaylistRequest(dependencies, context) {
       cookies: cookiesForAuthentication(session.authenticated === true, env),
       generic: genericOptions(env),
       playlistMode: true,
-      resolverPrefix: env.PLAYLIST_RESOLVER_PREFIX || 'https://vrc2link.luonako.cn/play?mode=auto&url=',
+      resolverPrefix: env.PLAYLIST_RESOLVER_PREFIX || 'https://vrc2link.luonako.cn/api/v1/play?mode=auto&url=',
     });
     const currentSession = state.getJson(sessionKey);
     if (currentSession?.sessionId !== session.sessionId) {
@@ -679,7 +794,7 @@ async function resolvePlaylistItemResponse(playlistResult, index, dependencies, 
     quality,
     mode: resolveMode,
     playlistMode: false,
-    resolverPrefix: env.PLAYLIST_RESOLVER_PREFIX || 'https://vrc2link.luonako.cn/play?mode=auto&url=',
+    resolverPrefix: env.PLAYLIST_RESOLVER_PREFIX || 'https://vrc2link.luonako.cn/api/v1/play?mode=auto&url=',
   });
   context.platform = result.platform || playlistResult.platform || null;
   bindDanmakuSession({

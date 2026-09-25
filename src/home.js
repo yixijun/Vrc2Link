@@ -528,10 +528,11 @@ const HOME_HTML = `<!doctype html>
             <p class="lead">把平台链接转换成 VRChat 可用的播放地址，或查看完整解析结果。</p>
           </div>
           <div class="route-summary" aria-label="接口摘要">
-            <div class="route-row"><span class="method">GET</span><code>/api</code><span>详细解析结果</span></div>
-            <div class="route-row"><span class="method">GET</span><code>/play</code><span>302 播放跳转</span></div>
-            <div class="route-row"><span class="method">GET</span><code>/playlist/current</code><span>当前合集清单</span></div>
-            <div class="route-row"><span class="method">GET</span><code>/playlist/current/item/N</code><span>合集条目播放</span></div>
+            <div class="route-row"><span class="method">GET</span><code>/api/v1/media/resolve</code><span>标准媒体响应</span></div>
+            <div class="route-row"><span class="method">GET</span><code>/api/v1/play</code><span>302 播放跳转</span></div>
+            <div class="route-row"><span class="method">GET</span><code>/api/v1/playlists/current</code><span>当前合集清单</span></div>
+            <div class="route-row"><span class="method">GET</span><code>/api/v1/playlists/current/items/N</code><span>合集条目播放</span></div>
+            <div class="route-row"><span class="method">GET</span><code>/api/v1/openapi.yaml</code><span>OpenAPI 3.1 规范</span></div>
           </div>
         </div>
 
@@ -595,11 +596,11 @@ const HOME_HTML = `<!doctype html>
         <article class="endpoint">
           <div>
             <span class="tag">GET</span>
-            <h3><code>/api</code></h3>
+            <h3><code>/api/v1/media/resolve</code></h3>
             <p>详细 JSON</p>
           </div>
           <div class="endpoint-copy">
-            <p>返回统一的媒体元数据、画质选项和实际播放流。<code>qualities</code> 是平台提供的选项，真正取得的直链以 <code>streams</code> 为准。</p>
+            <p>返回标准 JSON 信封中的媒体元数据、画质选项和实际播放流。<code>data.qualities</code> 是平台提供的选项，实际直链以 <code>data.streams</code> 为准。</p>
             <table>
               <thead><tr><th>参数</th><th>必填</th><th>说明</th></tr></thead>
               <tbody>
@@ -611,18 +612,18 @@ const HOME_HTML = `<!doctype html>
               <strong>Bilibili 高画质</strong>
               1080p、4K、8K 通常只提供 DASH 音视频分离流。Cookie 能解锁账号画质权限，但不会把两条轨道转换成带声音的单文件。
             </div>
-            <pre><code>GET /api?url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV...</code></pre>
+            <pre><code>GET /api/v1/media/resolve?url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV...</code></pre>
           </div>
         </article>
 
         <article class="endpoint">
           <div>
             <span class="tag">GET</span>
-            <h3><code>/play</code></h3>
+            <h3><code>/api/v1/play</code></h3>
             <p>302 Redirect</p>
           </div>
           <div class="endpoint-copy">
-            <p>直接 302 到媒体或 MPD。合集链接会播放当前项或第一项；合集清单使用独立的 <code>/playlist</code> 接口。不指定画质时选择最高可播放画质。</p>
+            <p>直接 302 到媒体或 MPD。合集链接会播放当前项或第一项；合集清单使用独立的 <code>/api/v1/playlists</code> 接口。不指定画质时选择最高可播放画质。</p>
             <table>
               <thead><tr><th>参数</th><th>必填</th><th>说明</th></tr></thead>
               <tbody>
@@ -633,16 +634,16 @@ const HOME_HTML = `<!doctype html>
             </table>
             <div class="compat-note">
               <strong>为什么 1080p 会返回 422？</strong>
-              <code>/play</code> 只做一次 302，不在服务器上合并 DASH 音视频。目标画质只有分离流时返回 <code>quality_unavailable</code>，不会静默降级或返回无声视频。
+              <code>/api/v1/play</code> 只做一次 302，不在服务器上合并 DASH 音视频。目标画质只有分离流时返回标准错误信封和 <code>quality_unavailable</code>，不会静默降级或返回无声视频。
             </div>
-            <pre><code>GET /play?quality=720p&amp;url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV...</code></pre>
+            <pre><code>GET /api/v1/play?quality=720p&amp;url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV...</code></pre>
           </div>
         </article>
 
         <article class="endpoint">
           <div>
             <span class="tag">GET</span>
-            <h3><code>/play?mode=dash</code></h3>
+            <h3><code>/api/v1/play?mode=dash</code></h3>
             <p>MPD 302 Redirect</p>
           </div>
           <div class="endpoint-copy">
@@ -659,8 +660,8 @@ const HOME_HTML = `<!doctype html>
               <strong>当前状态</strong>
               这是客户端能力验证入口。VizVid 的 AVPro 播放器已识别 <code>.mpd</code>；是否能在目标 VRChat 客户端稳定加载、跳转和同步，仍需实机记录，不能只以编辑器结果判定。
             </div>
-            <p>Unity/VizVid 可使用 <code>/play?mode=auto</code>：Bilibili 视频请求 DASH，其他支持平台继续播放单流。</p>
-            <pre><code>GET /play?mode=dash&amp;quality=1080p&amp;url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV...</code></pre>
+            <p>Unity/VizVid 使用 <code>/api/v1/play?mode=auto</code>：Bilibili 视频请求 DASH，其他支持的平台使用单流。</p>
+            <pre><code>GET /api/v1/play?mode=dash&amp;quality=1080p&amp;url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV...</code></pre>
           </div>
         </article>
       </div>
@@ -670,16 +671,16 @@ const HOME_HTML = `<!doctype html>
       <div class="section-inner">
         <div class="section-heading">
           <h2>鉴权与 Cookie</h2>
-          <p>平台 Cookie 只保存在服务器配置中，只有请求携带正确 <code>key</code> 时才会启用。</p>
+          <p>平台 Cookie 只保存在服务器配置中；新 API 客户端通过 Bearer 鉴权启用，浏览器跳转仍兼容 <code>key</code> 查询参数。</p>
         </div>
         <div class="note-grid">
           <div>
             <h3>匿名请求</h3>
-            <p>不传 <code>key</code> 时不会使用服务器 Cookie，按平台公开权限解析。</p>
+            <p>不传鉴权凭证时不会使用服务器 Cookie，按平台公开权限解析。</p>
           </div>
           <div>
             <h3>鉴权请求</h3>
-            <p><code>key</code> 与 <code>API_KEY</code> 一致时使用对应平台 Cookie；错误密钥返回 401。</p>
+            <p>请求头 <code>Authorization: Bearer YOUR_API_KEY</code> 与 <code>API_KEY</code> 一致时使用平台 Cookie；错误密钥返回 401。<code>?key=</code> 仅用于兼容旧链接。</p>
           </div>
         </div>
         <div class="config-guide">
@@ -716,7 +717,7 @@ KUAISHOU_COOKIE=完整的快手 Cookie 请求头</code></pre>
         <div class="config-guide">
           <div>
             <h3>请求追踪</h3>
-            <p>响应包含 <code>X-Request-Id</code>。JSON 日志不记录 Cookie、完整 API key、查询串或原始 IP。</p>
+            <p>响应包含 <code>API-Version</code> 和 <code>X-Request-Id</code>；v1 JSON 统一使用 <code>data/meta</code> 或 <code>error/meta</code>。日志不记录 Cookie、完整 API key、查询串或原始 IP。</p>
           </div>
           <pre><code>SQLITE_PATH=data/vrc2link.sqlite
 CACHE_TTL_SECONDS=300
@@ -732,7 +733,7 @@ TRUST_PROXY=false</code></pre>
       <div class="section-inner">
         <div class="section-heading">
           <h2>状态码</h2>
-          <p>错误响应统一使用 <code>{ "error": { "code": "...", "message": "..." } }</code>。</p>
+          <p>v1 JSON 错误统一使用 <code>{ "error": { "code": "...", "message": "..." }, "meta": { "apiVersion": "1", "requestId": "..." } }</code>；旧路径保留兼容格式。</p>
         </div>
         <div class="error-list">
           <div class="error-item"><strong>400</strong><span>地址缺失或无法识别</span></div>
@@ -906,7 +907,10 @@ TRUST_PROXY=false</code></pre>
     function buildRequestUrl() {
       if (!mediaUrl.value.trim()) return '';
       const dash = selectedMode() === 'dash';
-      const request = new URL(dash ? '/play' : '/' + selectedMode(), window.location.origin);
+      const requestPath = selectedMode() === 'api'
+        ? '/api/v1/media/resolve'
+        : '/api/v1/play';
+      const request = new URL(requestPath, window.location.origin);
       request.searchParams.set('url', mediaUrl.value.trim());
       if (apiKey.value) request.searchParams.set('key', apiKey.value);
       if (dash) request.searchParams.set('mode', 'dash');

@@ -10,24 +10,24 @@
 | --- | --- | --- |
 | Bilibili DASH 请求 | 已实现 | `mode=dash` 使用 `fnval=16`，保留视频/音频编码、带宽、尺寸、时长、初始化范围和索引范围 |
 | H.264/AAC 选轨 | 已实现 | 只接受请求画质的 H.264 视频和 AAC 音频；缺失时返回明确错误，不静默降级 |
-| MPD 生成 | 已实现（服务端样例） | `/dash/<ticket>/manifest.mpd`；MPD XML 解析通过，含视频、音频、BaseURL、SegmentBase 和声道描述 |
-| 音视频入口 | 已实现（服务端样例） | `/dash/<ticket>/video`、`/audio` 返回 302，不读取媒体 body；支持 DASH 资源的 HEAD |
+| MPD 生成 | 已实现（服务端样例） | `/api/v1/dash/<ticket>/manifest.mpd`；MPD XML 解析通过，含视频、音频、BaseURL、SegmentBase 和声道描述 |
+| 音视频入口 | 已实现（服务端样例） | `/api/v1/dash/<ticket>/video`、`/audio` 返回 302，不读取媒体 body；支持 DASH 资源的 HEAD |
 | ticket 刷新 | 已实现（服务端样例） | 临近 CDN 直链过期时只重新解析相同 source、BV/CID、画质；绝对 ticket 有效期不会被刷新延长 |
 | 服务端自动化测试 | 通过 | `npm test`：67 项通过 |
 | 公开 CDN 直连探针 | 通过（普通单文件样本） | 不带 Referer 的 `Range: bytes=0-0` 返回 206；仅取 1 字节，没有下载媒体 |
 | 公开 1080p DASH 样本 | 尚未证实 | 当前公开探测样本只返回 720p `durl`，没有 DASH 音视频轨；未使用账号 Cookie |
-| VizVid URL 选择 | 已修改，未编译 | `/play?mode=auto&quality=1080p` 会让 Bilibili 视频走 DASH、其他平台走单流；Bilibili DASH 请求选择 AVPro |
+| VizVid URL 选择 | 已修改，未编译 | `/api/v1/play?mode=auto&quality=1080p` 会让 Bilibili 视频走 DASH、其他平台走单流；Bilibili DASH 请求选择 AVPro |
 | Windows VRChat 客户端播放 | 未验证 | 仍需用实际客户端测试 MPD 加载、声音、跳转和过期恢复 |
 | Quest 客户端播放 | 未验证 | 需单独记录 CDN 直连和 AVPro/VRChat 实际行为 |
 
 ## 已加入的接口
 
 ```text
-/play?mode=dash&quality=1080p&url=<encoded-bilibili-url>
-/api?mode=dash&quality=1080p&url=<encoded-bilibili-url>
-/dash/<ticket>/manifest.mpd
-/dash/<ticket>/video
-/dash/<ticket>/audio
+/api/v1/play?mode=dash&quality=1080p&url=<encoded-bilibili-url>
+/api/v1/media/resolve?mode=dash&quality=1080p&url=<encoded-bilibili-url>
+/api/v1/dash/<ticket>/manifest.mpd
+/api/v1/dash/<ticket>/video
+/api/v1/dash/<ticket>/audio
 ```
 
 `ticket` 是随机不透明票据，只能访问绑定的媒体清单和两条轨道入口，不携带账号 Cookie 权限。刷新时如果 BV 或 CID 发生变化会拒绝更新。

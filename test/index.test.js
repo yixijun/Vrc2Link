@@ -33,9 +33,10 @@ test('only the new API endpoints are exposed', async () => {
   assert.match(html, /<title>Vrc2Link API<\/title>/);
   assert.match(html, /id="request-builder"/);
   assert.match(html, /id="paste-media"/);
-  assert.match(html, /<code>\/api<\/code>/);
-  assert.match(html, /<code>\/play<\/code>/);
-  assert.match(html, /<code>\/play\?mode=dash<\/code>/);
+  assert.match(html, /<code>\/api\/v1\/media\/resolve<\/code>/);
+  assert.match(html, /<code>\/api\/v1\/play<\/code>/);
+  assert.match(html, /<code>\/api\/v1\/openapi\.yaml<\/code>/);
+  assert.match(html, /<code>\/api\/v1\/play\?mode=dash<\/code>/);
   assert.match(html, /DASH 音视频分离流/);
   assert.match(html, /为什么 1080p 会返回 422/);
   assert.match(html, /生产运行状态保存在本机 SQLite/);
@@ -132,7 +133,7 @@ test('only the new API endpoints are exposed', async () => {
   controls.quality.value = '1080p';
   controls['request-builder'].listeners.input();
   assert.equal(controls.quality.disabled, false);
-  assert.match(controls['request-preview'].textContent, /\/play\?url=.*mode=dash/u);
+  assert.match(controls['request-preview'].textContent, /\/api\/v1\/play\?url=.*mode=dash/u);
   assert.match(controls['request-preview'].textContent, /quality=1080p/u);
 
   for (const path of ['/a', '/r', '/api/parse']) {

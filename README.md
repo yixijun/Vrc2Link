@@ -10,9 +10,9 @@ notepad config.env
 npm start
 ```
 
-默认监听 `http://localhost:7890`。浏览器打开根路径即可查看 Web 使用说明，并通过请求生成器创建 `/api` 或 `/play` 链接。
+默认监听 `http://localhost:7890`。浏览器打开根路径即可查看 Web 使用说明，并通过请求生成器创建 `/api/v1` 链接。新集成统一使用版本化 API；旧接口继续兼容，具体见[API v1 文档](docs/api-v1.md)和[OpenAPI 规范](docs/openapi-v1.yaml)。
 
-请求生成器会根据粘贴的链接自动识别 Bilibili 视频/直播、抖音/快手视频、YouTube 视频、网易云歌曲/MV，并只显示对应选项。Bilibili 视频支持 `b23.tv` 短链、`av170001`、标准 AV/BV 链接以及包含这些内容的分享文本；AV 号会转换为对应 BV 号供播放和弹幕使用。YouTube 不解析媒体流，`/play` 直接 302 到原链接并交给 VRChat 处理。
+请求生成器会根据粘贴的链接自动识别 Bilibili 视频/直播、抖音/快手视频、YouTube 视频、网易云歌曲/MV，并只显示对应选项。Bilibili 视频支持 `b23.tv` 短链、`av170001`、标准 AV/BV 链接以及包含这些内容的分享文本；AV 号会转换为对应 BV 号供播放和弹幕使用。YouTube 不解析媒体流，`/api/v1/play` 直接 302 到原链接并交给 VRChat 处理。
 
 `config.env` 使用一行一个配置的格式：
 
@@ -30,7 +30,7 @@ RATE_LIMIT_AUTH_PER_MINUTE=60
 RATE_LIMIT_IP_PER_MINUTE=120
 RATE_LIMIT_WINDOW_SECONDS=60
 TRUST_PROXY=false
-PLAYLIST_RESOLVER_PREFIX=https://vrc2link.luonako.cn/play?mode=auto&url=
+PLAYLIST_RESOLVER_PREFIX=https://vrc2link.luonako.cn/api/v1/play?mode=auto&url=
 PLAYLIST_SESSION_TTL_SECONDS=21600
 PUBLIC_BASE_URL=https://vrc2link.example
 DASH_TICKET_TTL_SECONDS=3600
@@ -42,14 +42,14 @@ Cookie 不需要挑选字段。在已登录的平台页面打开开发者工具�
 
 ## Bilibili 弹幕
 
-`/play` 成功后，服务器会按客户端记录当前媒体；Unity 弹幕层通过固定的 `/api?danmaku=1` 地址读取数据，不需要在 Udon 运行时拼接 `VRCUrl`。Bilibili 普通视频按 6 分钟分段读取历史弹幕，Bilibili 直播读取最近弹幕并去重。旧的 `/danmaku/current` 地址仍保留兼容。
+`/api/v1/play` 成功后，服务器会按客户端记录当前媒体；Unity 弹幕层通过固定的 `/api/v1/danmaku/current/...` 资源路径读取数据，不需要在 Udon 运行时拼接 `VRCUrl`。Bilibili 普通视频按 6 分钟分段读取历史弹幕，Bilibili 直播读取最近弹幕并去重。旧地址仍保留兼容。
 
 示例：
 
 ```text
-/api?danmaku=1&segment=1
-/api?danmaku=1&live=1
-/api?url=<媒体地址>&danmaku=1&segment=1
+/api/v1/danmaku/current/video/segments/1
+/api/v1/danmaku/current/live
+/api/v1/media/resolve?url=<媒体地址>
 ```
 
 需要在生产 `config.env` 增加：
@@ -110,7 +110,7 @@ GENERIC_RESOLVER_MAX_CONCURRENT=2
 | `DASH_TICKET_TTL_SECONDS` | DASH ticket 保留秒数，默认 `3600` |
 | `TRUST_PROXY` | 是否信任代理 IP 请求头，默认 `false` |
 
-修改配置后需要重启服务。不传 `key` 时使用匿名解析；传入正确的 `key` 时才会使用服务器 Cookie；错误的 `key` 返回 `401`。
+修改配置后需要重启服务。不传鉴权凭证时使用匿名解析；请求头 `Authorization: Bearer YOUR_API_KEY` 与 `API_KEY` 一致时才会使用服务器 Cookie；错误的凭证返回 `401`。旧的 `?key=` 查询参数继续兼容。
 
 ## 缓存与限流
 
@@ -118,7 +118,7 @@ GENERIC_RESOLVER_MAX_CONCURRENT=2
 
 超过匿名、鉴权或 IP 任一额度时返回 `429` 和稳定错误码 `rate_limited`。响应包含 `Retry-After`、`X-RateLimit-Limit`、`X-RateLimit-Remaining`、`X-RateLimit-Reset`。
 
-## `GET /api`
+## 兼容接口：`GET /api`
 
 返回详细解析结果。`url` 可以是纯媒体地址，也可以是包含地址的平台分享文本。
 
@@ -151,11 +151,11 @@ GENERIC_RESOLVER_MAX_CONCURRENT=2
 }
 ```
 
-## `GET /play`
+## 兼容接口：`GET /play`
 
 `/play` 只返回到媒体或 MPD 的 `302` 跳转，不把合集 JSON 交给播放器。传入合集链接时，会直接播放合集当前项；没有当前项时播放第一项。合集清单由单独的 `/playlist` 接口提供。
 
-不传 `quality` 时，单流模式选择最高可播放画质；指定画质不存在时返回 `422`，不会静默降级。
+不传 `quality` 时，单流模式选择最高可播放画质；指定画质不存在时返回 `422`，不会静默降级。新客户端应改用 `/api/v1/play`，其 JSON 错误响应含 `error` 与 `meta`。
 
 Bilibili 的 1080p、4K、8K 通常是 DASH 音视频分离流，而 `/play` 只跳转到一个带声音的可播放文件，不负责服务器合并。因此多数 B 站视频的直接播放上限是 720p。Cookie 只能解锁账号权限，不能把 DASH 转换成单文件；`/api` 中应以 `streams` 判断实际取得的直链。
 
@@ -167,7 +167,7 @@ Bilibili 的 1080p、4K、8K 通常是 DASH 音视频分离流，而 `/play` 只
 VizVid 使用 `mode=auto`：Bilibili 视频会请求 DASH 并跳转到 MPD，其他支持的平台继续跳转到单媒体流。Unity 世界默认请求 1080p；其他客户端可以省略画质，让服务器选择最高的 H.264/AAC DASH 轨道。指定的 Bilibili DASH 画质不可用时会明确报错。
 
 ```text
-/play?mode=auto&quality=1080p&url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV1xx411c7mD
+/api/v1/play?mode=auto&quality=1080p&url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV1xx411c7mD
 ```
 
 ### DASH 单播放器验证
@@ -185,7 +185,7 @@ Bilibili 1080p 及以上通常是 DASH 音视频分离流。`/play` 默认仍只
 
 支持的常用画质：`360p`、`480p`、`720p`、`1080p`、`4k`、`8k`、`original`、`128k`、`256k`、`320k`、`lossless`。抖音和快手当前返回分享页提供的 `original` 单文件流。
 
-## `GET /playlist`
+## 兼容接口：`GET /playlist`
 
 解析 Bilibili 合集、系列、收藏夹、多 P 视频或网易云歌单，返回按原顺序排列的条目。每个条目的 `url` 已通过 `PLAYLIST_RESOLVER_PREFIX` 包装，可直接写入 VizVid 的静态播放列表。
 
@@ -201,15 +201,15 @@ VRChat 当前没有向 Udon 开放运行时创建 `VRCUrl` 的能力，因此该
 Unity 中的独立“合集 / 歌单”面板使用两个不需要运行时拼接 `VRCUrl` 的固定接口：
 
 ```text
-/playlist/current
-/playlist/current/item/0
+/api/v1/playlists/current
+/api/v1/playlists/current/items/0
 ```
 
-玩家先通过 `/play` 打开 Bilibili 视频、Bilibili 合集或网易云歌单。服务器按客户端 IP 保存最近的合集会话；`/playlist/current` 返回标题、条目名称、当前索引和 `autoPlay`，`/playlist/current/item/N` 解析第 N 项并直接 `302` 到媒体或 MPD。直接打开合集/歌单时 `autoPlay=true`，从正在播放的 Bilibili 视频发现合集时为 `false`，不会打断当前视频。旧的 `/api?playlist=1` 和 `/api?playlistItem=N` 返回 `410`，提示使用新路径。
+玩家先通过 `/api/v1/play` 打开 Bilibili 视频、Bilibili 合集或网易云歌单。服务器按客户端 IP 保存最近的合集会话；`/api/v1/playlists/current` 返回标题、条目名称、当前索引和 `autoPlay`，`/api/v1/playlists/current/items/N` 解析第 N 项并直接 `302` 到媒体或 MPD。直接打开合集/歌单时 `autoPlay=true`，从正在播放的 Bilibili 视频发现合集时为 `false`，不会打断当前视频。旧的 `/api?playlist=1` 和 `/api?playlistItem=N` 返回 `410`，提示使用新路径。
 
 ## 安全
 
-生产环境必须使用 HTTPS。VRChat 只能通过 URL 传递 `key`，因此不要公开分享含有 `key` 的播放链接，也不要提交或分享 `config.env`。
+生产环境必须使用 HTTPS。普通 API 客户端应通过 `Authorization: Bearer ...` 发送密钥；浏览器重定向和旧客户端仍兼容 `?key=`。不要把密钥写入公开世界资产、公开分享含密钥的链接，也不要提交或分享 `config.env`。
 
 每个响应都有 `X-Request-Id`。服务日志为单行 JSON，只记录方法、路径、状态、平台、缓存命中、耗时和客户端 IP 哈希，不记录查询串、Cookie、完整 API key 或原始 IP。
 

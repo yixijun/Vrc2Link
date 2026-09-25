@@ -1,0 +1,424 @@
+openapi: 3.1.0
+info:
+  title: Vrc2Link API
+  version: 1.0.0
+  description: Versioned media resolution, playback, playlist, danmaku, and DASH endpoints.
+servers:
+  - url: https://vrc2link.luonako.cn
+  - url: http://localhost:7890
+tags:
+  - name: Service
+  - name: Media
+  - name: Playlists
+  - name: Danmaku
+  - name: DASH
+paths:
+  /api/v1:
+    get:
+      tags: [Service]
+      summary: Get API information
+      responses:
+        '200':
+          description: Service metadata in the standard JSON envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope'
+  /api/v1/openapi.yaml:
+    get:
+      tags: [Service]
+      summary: Download this OpenAPI document
+      responses:
+        '200':
+          description: OpenAPI 3.1 YAML document.
+          content:
+            application/yaml:
+              schema:
+                type: string
+  /api/v1/media/resolve:
+    get:
+      tags: [Media]
+      summary: Resolve a media URL
+      description: Returns normalized media metadata and available direct streams. JSON responses use the standard envelope.
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Url'
+        - $ref: '#/components/parameters/Mode'
+        - $ref: '#/components/parameters/Quality'
+      responses:
+        '200':
+          description: Resolved media metadata.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Media'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '422':
+          $ref: '#/components/responses/ApiError'
+        '429':
+          $ref: '#/components/responses/ApiError'
+  /api/v1/play:
+    get:
+      tags: [Media]
+      summary: Redirect to playable media
+      description: Redirects to a direct stream or DASH manifest. A playlist URL starts its current item or the first item and also establishes the current playlist session.
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Url'
+        - $ref: '#/components/parameters/Mode'
+        - $ref: '#/components/parameters/Quality'
+      responses:
+        '302':
+          $ref: '#/components/responses/Redirect'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '401':
+          $ref: '#/components/responses/ApiError'
+        '422':
+          $ref: '#/components/responses/ApiError'
+        '429':
+          $ref: '#/components/responses/ApiError'
+  /api/v1/playlists/resolve:
+    get:
+      tags: [Playlists]
+      summary: Resolve a playlist URL
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Url'
+      responses:
+        '200':
+          description: Resolved playlist in the standard JSON envelope.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Playlist'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '422':
+          $ref: '#/components/responses/ApiError'
+  /api/v1/playlists/current:
+    get:
+      tags: [Playlists]
+      summary: Get the current playback playlist
+      responses:
+        '200':
+          description: Current playlist manifest in the standard JSON envelope.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PlaylistManifest'
+        '409':
+          $ref: '#/components/responses/ApiError'
+  /api/v1/playlists/current/items/{index}:
+    get:
+      tags: [Playlists]
+      summary: Play a playlist item
+      description: Uses the mode and quality saved by the current playback session.
+      parameters:
+        - name: index
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '302':
+          $ref: '#/components/responses/Redirect'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '409':
+          $ref: '#/components/responses/ApiError'
+        '422':
+          $ref: '#/components/responses/ApiError'
+  /api/v1/danmaku/current/video/segments/{segment}:
+    get:
+      tags: [Danmaku]
+      summary: Get a Bilibili video danmaku segment
+      parameters:
+        - name: segment
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 240
+      responses:
+        '200':
+          description: Danmaku messages in the standard JSON envelope.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DanmakuResult'
+        '409':
+          $ref: '#/components/responses/ApiError'
+        '422':
+          $ref: '#/components/responses/ApiError'
+  /api/v1/danmaku/current/live:
+    get:
+      tags: [Danmaku]
+      summary: Get new Bilibili live danmaku
+      responses:
+        '200':
+          description: New danmaku messages in the standard JSON envelope.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DanmakuResult'
+        '409':
+          $ref: '#/components/responses/ApiError'
+        '422':
+          $ref: '#/components/responses/ApiError'
+  /api/v1/dash/{ticket}/manifest.mpd:
+    get:
+      tags: [DASH]
+      summary: Get the DASH manifest
+      parameters:
+        - $ref: '#/components/parameters/Ticket'
+      responses:
+        '200':
+          description: MPEG-DASH MPD document.
+          content:
+            application/dash+xml:
+              schema:
+                type: string
+                format: xml
+        '404':
+          $ref: '#/components/responses/ApiError'
+  /api/v1/dash/{ticket}/video:
+    get:
+      tags: [DASH]
+      summary: Redirect to the DASH video track
+      parameters:
+        - $ref: '#/components/parameters/Ticket'
+      responses:
+        '302':
+          $ref: '#/components/responses/Redirect'
+        '404':
+          $ref: '#/components/responses/ApiError'
+  /api/v1/dash/{ticket}/audio:
+    get:
+      tags: [DASH]
+      summary: Redirect to the DASH audio track
+      parameters:
+        - $ref: '#/components/parameters/Ticket'
+      responses:
+        '302':
+          $ref: '#/components/responses/Redirect'
+        '404':
+          $ref: '#/components/responses/ApiError'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: Optional. Required only to use server-configured platform cookies.
+  parameters:
+    Url:
+      name: url
+      in: query
+      required: true
+      description: URL-encoded platform media or playlist URL, or supported share text.
+      schema:
+        type: string
+        format: uri
+    Mode:
+      name: mode
+      in: query
+      required: false
+      description: single returns one combined stream, dash creates an MPD, and auto selects DASH for Bilibili video.
+      schema:
+        type: string
+        enum: [single, dash, auto]
+        default: single
+    Quality:
+      name: quality
+      in: query
+      required: false
+      description: Exact requested quality. Unavailable qualities return 422 without silent fallback.
+      schema:
+        type: string
+    Ticket:
+      name: ticket
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9_-]{32}$'
+  schemas:
+    Envelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          description: Endpoint response data.
+        meta:
+          $ref: '#/components/schemas/Meta'
+    Meta:
+      type: object
+      required: [apiVersion, requestId]
+      properties:
+        apiVersion:
+          type: string
+          const: '1'
+        requestId:
+          type: string
+          format: uuid
+    ErrorEnvelope:
+      type: object
+      required: [error, meta]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+        meta:
+          $ref: '#/components/schemas/Meta'
+    Media:
+      type: object
+      required: [platform, type]
+      properties:
+        platform:
+          type: string
+        type:
+          type: string
+        qualities:
+          type: array
+          items:
+            type: string
+        streams:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        dash:
+          type: object
+          additionalProperties: true
+      additionalProperties: true
+    Playlist:
+      type: object
+      required: [platform, type, playlist]
+      properties:
+        platform:
+          type: string
+        type:
+          const: playlist
+        playlist:
+          type: array
+          items:
+            type: object
+            properties:
+              title:
+                type: string
+              sourceUrl:
+                type: string
+                format: uri
+            additionalProperties: true
+      additionalProperties: true
+    PlaylistManifest:
+      type: object
+      required: [type, title, count, currentIndex, autoPlay, entries]
+      properties:
+        type:
+          const: playlist
+        title:
+          type: string
+        count:
+          type: integer
+          minimum: 0
+        currentIndex:
+          type: integer
+          minimum: 0
+        autoPlay:
+          type: boolean
+        entries:
+          type: array
+          items:
+            type: object
+            required: [title]
+            properties:
+              title:
+                type: string
+      additionalProperties: true
+    DanmakuResult:
+      type: object
+      required: [platform, mode, messages]
+      properties:
+        platform:
+          type: string
+        mode:
+          type: string
+          enum: [video, live]
+        segment:
+          type: integer
+        segmentSeconds:
+          type: integer
+        messages:
+          type: array
+          items:
+            type: object
+            required: [id, time, mode, color, text]
+            properties:
+              id:
+                type: string
+              time:
+                type: number
+              mode:
+                type: integer
+              color:
+                type: integer
+              text:
+                type: string
+      additionalProperties: true
+  responses:
+    ApiError:
+      description: Standard JSON error envelope. The exact error code identifies the failure.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Redirect:
+      description: Redirect to the selected media or CDN resource.
+      headers:
+        Location:
+          required: true
+          schema:
+            type: string
+            format: uri

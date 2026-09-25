@@ -87,8 +87,10 @@ export function updateDashTicket(state, ticket, current, next, ttlSeconds) {
 
 export function buildDashUrls(request, env, ticket) {
   const configuredBase = String(env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/u, '');
-  const base = configuredBase || new URL(request.url).origin;
-  const path = `/dash/${encodeURIComponent(ticket)}`;
+  const requestUrl = new URL(request.url);
+  const base = configuredBase || requestUrl.origin;
+  const prefix = requestUrl.pathname.startsWith('/api/v1/') ? '/api/v1/dash' : '/dash';
+  const path = `${prefix}/${encodeURIComponent(ticket)}`;
   return {
     manifestUrl: `${base}${path}/manifest.mpd`,
     videoUrl: `${base}${path}/video`,
