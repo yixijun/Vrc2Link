@@ -145,13 +145,13 @@ paths:
   /api/v1/playback-tickets/resolve:
     get:
       tags: [Playback Tickets]
-      summary: Exchange a local Udon key for a short-lived playback URL
-      description: VRChat's VRCStringDownloader cannot set Authorization headers, so the local VizVid settings panel uses this narrow exchange endpoint. The key is accepted only for this request and the response contains an opaque MPD ticket URL without the key. Keep url as the final query parameter so collection links containing ampersands remain intact.
+      summary: Exchange an optional local Udon key for a short-lived playback URL
+      description: VRChat's VRCStringDownloader cannot set Authorization headers, so the local VizVid settings panel uses this narrow exchange endpoint. With a key the ticket carries the matching Bilibili cookie; without a key the request is anonymous. The key is accepted only for this request and the response contains an opaque MPD ticket URL without the key. Keep url as the final query parameter so collection links containing ampersands remain intact.
       parameters:
         - name: key
           in: query
-          required: true
-          description: Personal Vrc2Link key entered in the local player settings. Do not share this request URL.
+          required: false
+          description: Optional personal Vrc2Link key entered in the local player settings. Do not share this request URL.
           schema:
             type: string
         - $ref: '#/components/parameters/Mode'
