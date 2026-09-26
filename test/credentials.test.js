@@ -294,18 +294,3 @@ test('Udon ticket exchange keeps the key out of the returned URL and preserves c
   assert.equal(ticket.sourceUrl, source);
   assert.equal(ticket.quality, '1080p');
 });
-
-test('Udon ticket exchange allows anonymous parser requests without a key', async () => {
-  const state = createMemoryState();
-  const env = { RATE_LIMIT_ANON_PER_MINUTE: '50' };
-  const requestUrl = 'https://vrc2link.example/api/v1/playback-tickets/resolve?mode=auto&url=' +
-    encodeURIComponent(VIDEO_URL);
-  const response = await handleRequest(new Request(requestUrl), { state, env, clientIp: '203.0.113.78' });
-  assert.equal(response.status, 200);
-  const playUrl = await response.text();
-  assert.match(playUrl, /^https:\/\/vrc2link\.luonako\.cn\/api\/v1\/playback-tickets\/[A-Za-z0-9_-]{43}\/manifest\.mpd$/u);
-  const token = playUrl.split('/').slice(-2, -1)[0];
-  const ticket = state.getJson(`playback-ticket:${token}`);
-  assert.equal(ticket.profileId, '');
-  assert.equal(ticket.sourceUrl, VIDEO_URL);
-});

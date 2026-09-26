@@ -488,10 +488,9 @@ async function handleCreatePlaybackTicketFromQuery(request, dependencies) {
   if (!state) throw new AppError(503, 'state_unavailable', 'Playback ticket storage is unavailable');
   const requestUrl = new URL(request.url);
   const key = String(requestUrl.searchParams.get('key') || '').trim();
-  const credential = key ? authenticateCredential({ state, env, key }) : null;
-  const authenticated = credential != null;
+  const credential = authenticateCredential({ state, env, key });
   const rateLimitHeaders = enforceRateLimits({
-    state, env, authenticated, suppliedKey: key, clientIp: dependencies.clientIp || 'unknown',
+    state, env, authenticated: true, suppliedKey: key, clientIp: dependencies.clientIp || 'unknown',
   });
   const rawUrl = extractTrailingQueryValue(request.url, 'url');
   const sourceUrl = normalizeSourceUrl(rawUrl);
@@ -509,7 +508,7 @@ async function handleCreatePlaybackTicketFromQuery(request, dependencies) {
   const ticket = createPlaybackTicket({
     state,
     env,
-    profileId: credential?.profileId || '',
+    profileId: credential.profileId,
     sourceUrl,
     mode,
     quality,
