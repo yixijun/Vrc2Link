@@ -161,7 +161,7 @@ function sanitizeTrack(track) {
     format: track.format || 'mp4',
     codec: track.codec || 'unknown',
     url: track.url,
-    backupUrls: Array.isArray(track.backupUrls) ? track.backupUrls.filter(Boolean).slice(0, 3) : [],
+    backupUrls: Array.isArray(track.backupUrls) ? track.backupUrls.filter(Boolean).slice(0, 8) : [],
     bandwidth: Number(track.bandwidth) || 0,
     trackId: Number(track.trackId) || 0,
     width: Number(track.width) || 0,

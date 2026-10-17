@@ -246,7 +246,7 @@ test('parseVideo explicitly requests DASH and keeps track metadata', async (t) =
   assert.equal(result.streams.some((stream) => stream.url.includes('should-not-be-used')), false);
 });
 
-test('parseVideo prefers an allowed Bilibili CDN over the primary DASH URL', async (t) => {
+test('parseVideo prefers a configured Bilibili CDN over the primary DASH URL', async (t) => {
   const originalFetch = globalThis.fetch;
 
   globalThis.fetch = async (input) => {
@@ -299,14 +299,59 @@ test('parseVideo prefers an allowed Bilibili CDN over the primary DASH URL', asy
   const result = await parseVideo('BVcdnfixture', {
     mode: 'dash',
     quality: '1080p',
-    cdnAllowlist: ['upos-sz-mirrorali.bilivideo.com'],
+    cdnPreference: ['upos-sz-mirrorali.bilivideo.com'],
   });
   const video = result.streams.find((stream) => stream.type === 'video-only');
   const audio = result.streams.find((stream) => stream.type === 'audio-only');
 
   assert.equal(video.url, 'https://upos-sz-mirrorali.bilivideo.com/video.m4s?deadline=1999999999');
-  assert.deepEqual(video.backupUrls, []);
+  assert.deepEqual(video.backupUrls, [
+    'https://upos-sz-mirrorcosov.bilivideo.com/video.m4s?deadline=1999999999',
+    'https://cn-gddg-ct-01-12.bilivideo.com/video.m4s?deadline=1999999999',
+  ]);
   assert.equal(audio.url, 'https://upos-sz-mirrorali.bilivideo.com/audio.m4s?deadline=1999999999');
+});
+
+test('parseVideo keeps an original CDN as fallback when preferred conversion is unavailable', async (t) => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.includes('/x/web-interface/view')) {
+      return Response.json({
+        code: 0,
+        data: {
+          bvid: 'BVcdnfallback',
+          cid: 987654,
+          title: 'CDN fallback fixture',
+          duration: 91,
+          owner: { name: 'Uploader' },
+          pages: [],
+        },
+      });
+    }
+    if (url.includes('/x/player/playurl')) {
+      return Response.json({
+        code: 0,
+        data: {
+          quality: 64,
+          durl: [{ url: 'https://cn-gddg-ct-01-12.bilivideo.com/upgcxcode/video.mp4?deadline=1999999999' }],
+        },
+      });
+    }
+    return Response.json({ code: -404, message: 'wrong endpoint' });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const result = await parseVideo('BVcdnfallback', {
+    cdnPreference: ['upos-sz-mirrorali.bilivideo.com'],
+  });
+  const stream = result.streams[0];
+
+  assert.equal(stream.url, 'https://upos-sz-mirrorali.bilivideo.com/upgcxcode/video.mp4?deadline=1999999999');
+  assert.deepEqual(stream.backupUrls, [
+    'https://cn-gddg-ct-01-12.bilivideo.com/upgcxcode/video.mp4?deadline=1999999999',
+  ]);
 });
 
 test('parseVideo auto mode requests DASH while retaining direct streams as fallback', async (t) => {

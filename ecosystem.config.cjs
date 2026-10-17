@@ -13,6 +13,7 @@ module.exports = {
       KUAISHOU_COOKIE: process.env.KUAISHOU_COOKIE || '',
       SQLITE_PATH: process.env.SQLITE_PATH || '',
       CACHE_TTL_SECONDS: process.env.CACHE_TTL_SECONDS || '',
+      BILIBILI_CDN_PREFERENCE: process.env.BILIBILI_CDN_PREFERENCE || '',
       BILIBILI_CDN_ALLOWLIST: process.env.BILIBILI_CDN_ALLOWLIST || '',
       RATE_LIMIT_ANON_PER_MINUTE: process.env.RATE_LIMIT_ANON_PER_MINUTE || '',
       RATE_LIMIT_AUTH_PER_MINUTE: process.env.RATE_LIMIT_AUTH_PER_MINUTE || '',

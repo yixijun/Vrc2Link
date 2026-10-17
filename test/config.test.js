@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { DEFAULT_BILIBILI_CDN_ALLOWLIST, loadConfig, mergeConfig, parseConfigFile } from '../src/config.js';
+import { DEFAULT_BILIBILI_CDN_PREFERENCE, loadConfig, mergeConfig, parseConfigFile } from '../src/config.js';
 
 test('parseConfigFile preserves complete cookie header values', () => {
   const config = parseConfigFile(`
@@ -54,5 +54,5 @@ test('loadConfig provides the compatible Bilibili CDN defaults', () => {
     environment: { CONFIG_FILE: '__missing_cdn_defaults_test__.env' },
   });
 
-  assert.equal(config.BILIBILI_CDN_ALLOWLIST, DEFAULT_BILIBILI_CDN_ALLOWLIST.join(','));
+  assert.equal(config.BILIBILI_CDN_PREFERENCE, DEFAULT_BILIBILI_CDN_PREFERENCE.join(','));
 });

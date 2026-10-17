@@ -13,7 +13,7 @@ export async function resolveMedia(rawUrl, options = {}) {
     quality,
     generic = {},
     mode = 'single',
-    bilibiliCdnAllowlist = [],
+    bilibiliCdnPreference = [],
   } = options;
   if (!rawUrl?.trim()) {
     throw new AppError(400, 'missing_url', 'Missing required parameter: url');
@@ -65,7 +65,7 @@ export async function resolveMedia(rawUrl, options = {}) {
       resolverPrefix: options.resolverPrefix || '',
       playlistMode: options.playlistMode === true,
       mode,
-      bilibiliCdnAllowlist,
+      bilibiliCdnPreference,
     });
     if (!result.playlist?.length && !result.streams?.some((stream) => stream.url)) {
       throw new Error('No playable streams found');
@@ -129,7 +129,7 @@ async function parsePlatform(platform, extracted, options) {
           ...options,
           page: extracted.page,
           includeSeasonPlaylist: options.playlistMode,
-          cdnAllowlist: options.bilibiliCdnAllowlist,
+          cdnPreference: options.bilibiliCdnPreference ?? options.bilibiliCdnAllowlist,
         });
   }
   if (platform === 'douyin' || platform === 'kuaishou') {

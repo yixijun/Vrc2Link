@@ -1,4 +1,4 @@
-export function parseCdnAllowlist(value) {
+export function parseCdnPreference(value) {
   if (Array.isArray(value)) {
     return [...new Set(value.map(normalizeHostname).filter(Boolean))];
   }
@@ -8,18 +8,36 @@ export function parseCdnAllowlist(value) {
     .filter(Boolean))];
 }
 
-export function preferCdnUrls(primaryUrl, backupUrls, allowlist = []) {
+export function preferCdnUrls(primaryUrl, backupUrls, preferredHosts = []) {
   const candidates = uniqueUrls([
     primaryUrl,
     ...(Array.isArray(backupUrls) ? backupUrls : [backupUrls]),
   ]);
-  const hosts = parseCdnAllowlist(allowlist);
+  const hosts = parseCdnPreference(preferredHosts);
   if (!hosts.length) return candidates;
 
-  const rank = new Map(hosts.map((host, index) => [host, index]));
-  return candidates
-    .filter((url) => rank.has(urlHostname(url)))
-    .sort((left, right) => rank.get(urlHostname(left)) - rank.get(urlHostname(right)));
+  const preferred = [];
+  for (const host of hosts) {
+    for (const candidate of candidates) {
+      if (urlHostname(candidate) === host) preferred.push(candidate);
+    }
+    for (const candidate of candidates) {
+      const rewrittenUrl = rewriteCdnHost(candidate, host);
+      if (rewrittenUrl) preferred.push(rewrittenUrl);
+    }
+  }
+  return uniqueUrls([...preferred, ...candidates]);
+}
+
+export function isBilibiliCdnUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    const host = url.hostname.toLowerCase();
+    return url.protocol === 'https:' && !url.port && url.pathname.includes('/upgcxcode/') &&
+      (host.endsWith('.bilivideo.com') || host.endsWith('.akamaized.net'));
+  } catch {
+    return false;
+  }
 }
 
 function uniqueUrls(urls) {
@@ -52,4 +70,18 @@ function urlHostname(value) {
   } catch {
     return '';
   }
+}
+
+function rewriteCdnHost(rawUrl, targetHost) {
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return '';
+  }
+  if (!isBilibiliCdnUrl(rawUrl)) return '';
+  const sourceHost = url.hostname.toLowerCase();
+  if (sourceHost === targetHost) return rawUrl;
+  url.hostname = targetHost;
+  return url.href;
 }

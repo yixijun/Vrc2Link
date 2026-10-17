@@ -5,16 +5,17 @@
 
 import { fetchWithRetry } from '../utils/http.js';
 import { bilibiliQuality, bilibiliQnForQuality } from '../utils/quality.js';
-import { parseCdnAllowlist, preferCdnUrls } from '../utils/cdn.js';
+import { parseCdnPreference, preferCdnUrls } from '../utils/cdn.js';
 
 // ---- Parse video ----
 
 export async function parseVideo(videoId, options = {}) {
   const {
     cookie = '', quality: targetQuality, page = 1,
-    includeSeasonPlaylist = false, resolverPrefix = '', mode = 'single', cdnAllowlist = [],
+    includeSeasonPlaylist = false, resolverPrefix = '', mode = 'single',
+    cdnPreference, cdnAllowlist,
   } = options;
-  const allowedCdnHosts = parseCdnAllowlist(cdnAllowlist);
+  const preferredCdnHosts = parseCdnPreference(cdnPreference ?? cdnAllowlist ?? []);
   const avMatch = String(videoId).match(/^av(\d+)$/iu);
   const viewQuery = avMatch ? { aid: avMatch[1] } : { bvid: videoId };
 
@@ -107,7 +108,7 @@ export async function parseVideo(videoId, options = {}) {
 
   if (mode !== 'dash' && playResult.durl?.length) {
     for (const d of playResult.durl) {
-      const urls = preferCdnUrls(d.url, d.backup_url || d.backupUrl, allowedCdnHosts);
+      const urls = preferCdnUrls(d.url, d.backup_url || d.backupUrl, preferredCdnHosts);
       if (!urls.length) continue;
       const [url, ...backupUrls] = urls;
       streams.push({
@@ -128,7 +129,7 @@ export async function parseVideo(videoId, options = {}) {
       const urls = preferCdnUrls(
         v.baseUrl || v.base_url,
         v.backupUrl || v.backup_url,
-        allowedCdnHosts,
+        preferredCdnHosts,
       );
       if (!urls.length) continue;
       const [url, ...backupUrls] = urls;
@@ -152,7 +153,7 @@ export async function parseVideo(videoId, options = {}) {
       const urls = preferCdnUrls(
         a.baseUrl || a.base_url,
         a.backupUrl || a.backup_url,
-        allowedCdnHosts,
+        preferredCdnHosts,
       );
       if (!urls.length) continue;
       const [url, ...backupUrls] = urls;

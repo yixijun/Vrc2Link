@@ -27,7 +27,7 @@ import {
   getPlaybackTicket,
   rotateCredential,
 } from './credentials.js';
-import { parseCdnAllowlist } from './utils/cdn.js';
+import { isBilibiliCdnUrl, parseCdnPreference } from './utils/cdn.js';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -200,7 +200,7 @@ async function dispatchRequest(request, dependencies, context) {
     const playlistMode = url.pathname === '/playlist';
     const rawUrl = url.searchParams.get('url');
     const generic = genericOptions(env);
-    const bilibiliCdnAllowlist = parseCdnAllowlist(env.BILIBILI_CDN_ALLOWLIST);
+    const bilibiliCdnPreference = getBilibiliCdnPreference(env);
     context.platform = identifyPlatform(
       normalizeSourceUrl(rawUrl || '', { allowGeneric: generic.enabled }),
       { allowGeneric: generic.enabled },
@@ -218,7 +218,7 @@ async function dispatchRequest(request, dependencies, context) {
         })
       : undefined;
     const cacheKey = !authenticated && state
-      ? mediaCacheKey(rawUrl, quality, generic.enabled, playlistMode, requestedMode, bilibiliCdnAllowlist)
+      ? mediaCacheKey(rawUrl, quality, generic.enabled, playlistMode, requestedMode, bilibiliCdnPreference)
       : undefined;
     let result = cacheKey ? state.getJson(cacheKey) : undefined;
     const cacheHit = result !== undefined;
@@ -226,7 +226,7 @@ async function dispatchRequest(request, dependencies, context) {
     if (!cacheHit) {
       result = await resolve(rawUrl, {
         authenticated, cookies, quality, generic, playlistMode,
-        bilibiliCdnAllowlist,
+        bilibiliCdnPreference,
         mode: sourceMode,
         resolverPrefix: env.PLAYLIST_RESOLVER_PREFIX || 'https://vrc2link.luonako.cn/api/v1/play?mode=auto&url=',
       });
@@ -255,7 +255,7 @@ async function dispatchRequest(request, dependencies, context) {
         cookies,
         quality: itemQuality,
         generic,
-        bilibiliCdnAllowlist,
+        bilibiliCdnPreference,
         playlistMode: false,
         mode: itemMode,
         resolverPrefix: env.PLAYLIST_RESOLVER_PREFIX || 'https://vrc2link.luonako.cn/api/v1/play?mode=auto&url=',
@@ -352,7 +352,8 @@ async function dispatchRequest(request, dependencies, context) {
     const streamQuality = requestedMode === 'auto' && result.platform === 'bilibili' && result.type === 'video'
       ? undefined
       : playbackQuality;
-    const stream = selectPlayableStream(result, streamQuality);
+    let stream = selectPlayableStream(result, streamQuality);
+    stream = await choosePlayableCdn(stream, result);
     if (url.pathname === '/play') {
       bindPlaylistSession({
         state, env, clientIp: dependencies.clientIp || 'unknown', rawUrl, authenticated, profileId,
@@ -782,7 +783,8 @@ async function handleDashAssetRequest(asset, request, dependencies, context) {
   }
 
   const track = asset.kind === 'video' ? record.video : record.audio;
-  const location = track?.url || track?.backupUrls?.[0];
+  const selectedTrack = await choosePlayableCdn(track, record);
+  const location = selectedTrack?.url || selectedTrack?.backupUrls?.[0];
   if (!location) throw new AppError(502, 'dash_track_unavailable', `DASH ${asset.kind} track is unavailable`);
   return withCommonHeaders(new Response(null, {
     status: 302,
@@ -790,8 +792,8 @@ async function handleDashAssetRequest(asset, request, dependencies, context) {
       Location: location,
       'Cache-Control': 'no-store',
       'Referrer-Policy': 'no-referrer',
-      'X-Stream-Quality': track.quality || 'unknown',
-      'X-Stream-Format': track.format || 'mp4',
+      'X-Stream-Quality': selectedTrack.quality || 'unknown',
+      'X-Stream-Format': selectedTrack.format || 'mp4',
     },
   }));
 }
@@ -843,6 +845,42 @@ function dashTrackDescriptor(track) {
   };
 }
 
+async function choosePlayableCdn(stream, result) {
+  if (!stream || result?.platform !== 'bilibili' || !stream.backupUrls?.length) return stream;
+  const candidates = [stream.url, ...stream.backupUrls]
+    .filter(isBilibiliCdnUrl)
+    .slice(0, 8);
+  if (candidates.length < 2) return stream;
+
+  const available = await Promise.all(candidates.map(probeBilibiliCdn));
+  const selected = candidates.find((_candidate, index) => available[index]);
+  if (!selected) return stream;
+  return {
+    ...stream,
+    url: selected,
+    backupUrls: candidates.filter((candidate) => candidate !== selected),
+  };
+}
+
+async function probeBilibiliCdn(url) {
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Range: 'bytes=0-1',
+        Referer: 'https://www.bilibili.com/',
+        'User-Agent': 'Mozilla/5.0',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(2500),
+    });
+    response.body?.cancel().catch(() => {});
+    return response.status === 200 || response.status === 206;
+  } catch {
+    return false;
+  }
+}
+
 async function loadFreshDashTicket(ticket, dependencies) {
   const state = dependencies.state;
   const env = dependencies.env || process.env;
@@ -870,7 +908,7 @@ async function refreshDashTicket(ticket, dependencies, env) {
     cookies: cookiesForAuthentication(latest.authenticated === true, env, latest.profileId, dependencies.state),
     quality: latest.quality,
     generic: genericOptions(env),
-    bilibiliCdnAllowlist: parseCdnAllowlist(env.BILIBILI_CDN_ALLOWLIST),
+    bilibiliCdnPreference: getBilibiliCdnPreference(env),
     mode: 'dash',
   });
   if ((latest.id && String(result.id || '') !== String(latest.id)) ||
@@ -1041,7 +1079,7 @@ async function handleCurrentPlaylistRequest(dependencies, context) {
       authenticated: session.authenticated === true,
       cookies: cookiesForAuthentication(session.authenticated === true, env, session.profileId, state),
       generic: genericOptions(env),
-      bilibiliCdnAllowlist: parseCdnAllowlist(env.BILIBILI_CDN_ALLOWLIST),
+      bilibiliCdnPreference: getBilibiliCdnPreference(env),
       playlistMode: true,
       resolverPrefix: env.PLAYLIST_RESOLVER_PREFIX || 'https://vrc2link.luonako.cn/api/v1/play?mode=auto&url=',
     });
@@ -1103,7 +1141,7 @@ async function resolvePlaylistItemResponse(playlistResult, index, dependencies, 
   if (!sourceUrl) throw new AppError(422, 'invalid_playlist_item', 'Playlist item has no playable source URL');
   const env = dependencies.env || process.env;
   const generic = genericOptions(env);
-  const bilibiliCdnAllowlist = parseCdnAllowlist(env.BILIBILI_CDN_ALLOWLIST);
+  const bilibiliCdnPreference = getBilibiliCdnPreference(env);
   const requestedMode = dependencies.mode || 'single';
   const sourcePlatform = identifyPlatform(
     normalizeSourceUrl(sourceUrl, { allowGeneric: generic.enabled }),
@@ -1117,7 +1155,7 @@ async function resolvePlaylistItemResponse(playlistResult, index, dependencies, 
     authenticated: dependencies.authenticated === true,
     cookies: cookiesForAuthentication(dependencies.authenticated === true, env, dependencies.profileId, dependencies.state),
     generic,
-    bilibiliCdnAllowlist,
+    bilibiliCdnPreference,
     quality,
     mode: resolveMode,
     playlistMode: false,
@@ -1292,11 +1330,11 @@ function mediaCacheKey(
   allowGeneric = false,
   playlistMode = false,
   mode = 'single',
-  bilibiliCdnAllowlist = [],
+  bilibiliCdnPreference = [],
 ) {
   const normalized = normalizeSourceUrl(rawUrl || '', { allowGeneric });
   const digest = createHash('sha256')
-    .update(`${normalized}\n${quality || ''}\n${playlistMode ? 'playlist' : 'media'}\n${mode}\n${bilibiliCdnAllowlist.join(',')}`)
+    .update(`${normalized}\n${quality || ''}\n${playlistMode ? 'playlist' : 'media'}\n${mode}\n${bilibiliCdnPreference.join(',')}`)
     .digest('hex');
   return `media:${digest}`;
 }
@@ -1309,6 +1347,10 @@ function genericOptions(env) {
     timeoutMs: positiveInteger(env.GENERIC_RESOLVER_TIMEOUT_MS, 20000),
     maxConcurrent: positiveInteger(env.GENERIC_RESOLVER_MAX_CONCURRENT, 2),
   };
+}
+
+function getBilibiliCdnPreference(env) {
+  return parseCdnPreference(env.BILIBILI_CDN_PREFERENCE || env.BILIBILI_CDN_ALLOWLIST);
 }
 
 function booleanValue(value, fallback) {

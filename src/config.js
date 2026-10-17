@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 export const DEFAULT_PUBLIC_BASE_URL = 'https://vrc2link.luonako.cn';
-export const DEFAULT_BILIBILI_CDN_ALLOWLIST = [
+export const DEFAULT_BILIBILI_CDN_PREFERENCE = [
   'upos-sz-mirror08c.bilivideo.com',
   'upos-sz-mirrorali.bilivideo.com',
   'upos-sz-mirrorhw.bilivideo.com',
@@ -10,10 +10,11 @@ export const DEFAULT_BILIBILI_CDN_ALLOWLIST = [
   'upos-sz-mirrorcoso1.bilivideo.com',
   'upos-sz-estgcos.bilivideo.com',
 ];
+export const DEFAULT_BILIBILI_CDN_ALLOWLIST = DEFAULT_BILIBILI_CDN_PREFERENCE;
 
 const CONFIG_KEYS = [
   'PORT', 'API_KEY', 'BILIBILI_COOKIE', 'NETEASE_COOKIE', 'DOUYIN_COOKIE', 'KUAISHOU_COOKIE',
-  'SQLITE_PATH', 'CACHE_TTL_SECONDS', 'TRUST_PROXY', 'BILIBILI_CDN_ALLOWLIST',
+  'SQLITE_PATH', 'CACHE_TTL_SECONDS', 'TRUST_PROXY', 'BILIBILI_CDN_PREFERENCE', 'BILIBILI_CDN_ALLOWLIST',
   'RATE_LIMIT_ANON_PER_MINUTE', 'RATE_LIMIT_AUTH_PER_MINUTE',
   'RATE_LIMIT_IP_PER_MINUTE', 'RATE_LIMIT_WINDOW_SECONDS',
   'DANMAKU_RATE_LIMIT_PER_MINUTE', 'DANMAKU_SESSION_TTL_SECONDS',
@@ -76,8 +77,8 @@ export function loadConfig(options = {}) {
   }
 
   const config = mergeConfig(fileConfig, environment);
-  if (!String(config.BILIBILI_CDN_ALLOWLIST || '').trim()) {
-    config.BILIBILI_CDN_ALLOWLIST = DEFAULT_BILIBILI_CDN_ALLOWLIST.join(',');
+  if (!String(config.BILIBILI_CDN_PREFERENCE || config.BILIBILI_CDN_ALLOWLIST || '').trim()) {
+    config.BILIBILI_CDN_PREFERENCE = DEFAULT_BILIBILI_CDN_PREFERENCE.join(',');
   }
   return config;
 }
