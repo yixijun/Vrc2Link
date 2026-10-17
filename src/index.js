@@ -27,6 +27,7 @@ import {
   getPlaybackTicket,
   rotateCredential,
 } from './credentials.js';
+import { parseCdnAllowlist } from './utils/cdn.js';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -199,6 +200,7 @@ async function dispatchRequest(request, dependencies, context) {
     const playlistMode = url.pathname === '/playlist';
     const rawUrl = url.searchParams.get('url');
     const generic = genericOptions(env);
+    const bilibiliCdnAllowlist = parseCdnAllowlist(env.BILIBILI_CDN_ALLOWLIST);
     context.platform = identifyPlatform(
       normalizeSourceUrl(rawUrl || '', { allowGeneric: generic.enabled }),
       { allowGeneric: generic.enabled },
@@ -216,7 +218,7 @@ async function dispatchRequest(request, dependencies, context) {
         })
       : undefined;
     const cacheKey = !authenticated && state
-      ? mediaCacheKey(rawUrl, quality, generic.enabled, playlistMode, requestedMode)
+      ? mediaCacheKey(rawUrl, quality, generic.enabled, playlistMode, requestedMode, bilibiliCdnAllowlist)
       : undefined;
     let result = cacheKey ? state.getJson(cacheKey) : undefined;
     const cacheHit = result !== undefined;
@@ -224,6 +226,7 @@ async function dispatchRequest(request, dependencies, context) {
     if (!cacheHit) {
       result = await resolve(rawUrl, {
         authenticated, cookies, quality, generic, playlistMode,
+        bilibiliCdnAllowlist,
         mode: sourceMode,
         resolverPrefix: env.PLAYLIST_RESOLVER_PREFIX || 'https://vrc2link.luonako.cn/api/v1/play?mode=auto&url=',
       });
@@ -252,6 +255,7 @@ async function dispatchRequest(request, dependencies, context) {
         cookies,
         quality: itemQuality,
         generic,
+        bilibiliCdnAllowlist,
         playlistMode: false,
         mode: itemMode,
         resolverPrefix: env.PLAYLIST_RESOLVER_PREFIX || 'https://vrc2link.luonako.cn/api/v1/play?mode=auto&url=',
@@ -866,6 +870,7 @@ async function refreshDashTicket(ticket, dependencies, env) {
     cookies: cookiesForAuthentication(latest.authenticated === true, env, latest.profileId, dependencies.state),
     quality: latest.quality,
     generic: genericOptions(env),
+    bilibiliCdnAllowlist: parseCdnAllowlist(env.BILIBILI_CDN_ALLOWLIST),
     mode: 'dash',
   });
   if ((latest.id && String(result.id || '') !== String(latest.id)) ||
@@ -1036,6 +1041,7 @@ async function handleCurrentPlaylistRequest(dependencies, context) {
       authenticated: session.authenticated === true,
       cookies: cookiesForAuthentication(session.authenticated === true, env, session.profileId, state),
       generic: genericOptions(env),
+      bilibiliCdnAllowlist: parseCdnAllowlist(env.BILIBILI_CDN_ALLOWLIST),
       playlistMode: true,
       resolverPrefix: env.PLAYLIST_RESOLVER_PREFIX || 'https://vrc2link.luonako.cn/api/v1/play?mode=auto&url=',
     });
@@ -1097,6 +1103,7 @@ async function resolvePlaylistItemResponse(playlistResult, index, dependencies, 
   if (!sourceUrl) throw new AppError(422, 'invalid_playlist_item', 'Playlist item has no playable source URL');
   const env = dependencies.env || process.env;
   const generic = genericOptions(env);
+  const bilibiliCdnAllowlist = parseCdnAllowlist(env.BILIBILI_CDN_ALLOWLIST);
   const requestedMode = dependencies.mode || 'single';
   const sourcePlatform = identifyPlatform(
     normalizeSourceUrl(sourceUrl, { allowGeneric: generic.enabled }),
@@ -1110,6 +1117,7 @@ async function resolvePlaylistItemResponse(playlistResult, index, dependencies, 
     authenticated: dependencies.authenticated === true,
     cookies: cookiesForAuthentication(dependencies.authenticated === true, env, dependencies.profileId, dependencies.state),
     generic,
+    bilibiliCdnAllowlist,
     quality,
     mode: resolveMode,
     playlistMode: false,
@@ -1278,10 +1286,17 @@ function writeRequestLog(logger, entry) {
   }
 }
 
-function mediaCacheKey(rawUrl, quality, allowGeneric = false, playlistMode = false, mode = 'single') {
+function mediaCacheKey(
+  rawUrl,
+  quality,
+  allowGeneric = false,
+  playlistMode = false,
+  mode = 'single',
+  bilibiliCdnAllowlist = [],
+) {
   const normalized = normalizeSourceUrl(rawUrl || '', { allowGeneric });
   const digest = createHash('sha256')
-    .update(`${normalized}\n${quality || ''}\n${playlistMode ? 'playlist' : 'media'}\n${mode}`)
+    .update(`${normalized}\n${quality || ''}\n${playlistMode ? 'playlist' : 'media'}\n${mode}\n${bilibiliCdnAllowlist.join(',')}`)
     .digest('hex');
   return `media:${digest}`;
 }

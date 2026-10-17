@@ -5,14 +5,16 @@
 
 import { fetchWithRetry } from '../utils/http.js';
 import { bilibiliQuality, bilibiliQnForQuality } from '../utils/quality.js';
+import { parseCdnAllowlist, preferCdnUrls } from '../utils/cdn.js';
 
 // ---- Parse video ----
 
 export async function parseVideo(videoId, options = {}) {
   const {
     cookie = '', quality: targetQuality, page = 1,
-    includeSeasonPlaylist = false, resolverPrefix = '', mode = 'single',
+    includeSeasonPlaylist = false, resolverPrefix = '', mode = 'single', cdnAllowlist = [],
   } = options;
+  const allowedCdnHosts = parseCdnAllowlist(cdnAllowlist);
   const avMatch = String(videoId).match(/^av(\d+)$/iu);
   const viewQuery = avMatch ? { aid: avMatch[1] } : { bvid: videoId };
 
@@ -105,13 +107,17 @@ export async function parseVideo(videoId, options = {}) {
 
   if (mode !== 'dash' && playResult.durl?.length) {
     for (const d of playResult.durl) {
+      const urls = preferCdnUrls(d.url, d.backup_url || d.backupUrl, allowedCdnHosts);
+      if (!urls.length) continue;
+      const [url, ...backupUrls] = urls;
       streams.push({
         quality: directQuality, duration: pageDuration,
-        format: d.url.includes('.m3u8') ? 'm3u8' : d.url.includes('.flv') ? 'flv' : 'mp4',
+        format: url.includes('.m3u8') ? 'm3u8' : url.includes('.flv') ? 'flv' : 'mp4',
         codec: 'avc',
-        url: d.url,
+        url,
+        backupUrls,
         size: d.size || 0,
-        expiresAt: (d.url.match(/deadline=(\d+)/) || [])[1] || null,
+        expiresAt: (url.match(/deadline=(\d+)/) || [])[1] || null,
       });
     }
   }
@@ -119,10 +125,17 @@ export async function parseVideo(videoId, options = {}) {
   if (playResult.dash && (mode === 'dash' || mode === 'auto' || streams.length === 0)) {
     for (const v of playResult.dash.video || []) {
       const segmentBase = v.segment_base || v.SegmentBase || {};
+      const urls = preferCdnUrls(
+        v.baseUrl || v.base_url,
+        v.backupUrl || v.backup_url,
+        allowedCdnHosts,
+      );
+      if (!urls.length) continue;
+      const [url, ...backupUrls] = urls;
       streams.push({
         quality: bilibiliQuality(v.id), format: 'mp4', codec: v.codecs || 'avc',
-        url: v.baseUrl || v.base_url,
-        backupUrls: v.backupUrl || v.backup_url || [],
+        url,
+        backupUrls,
         type: 'video-only', bandwidth: v.bandwidth || 0,
         trackId: v.id || 0,
         width: v.width || 0,
@@ -136,10 +149,17 @@ export async function parseVideo(videoId, options = {}) {
     }
     for (const a of playResult.dash.audio || []) {
       const segmentBase = a.segment_base || a.SegmentBase || {};
+      const urls = preferCdnUrls(
+        a.baseUrl || a.base_url,
+        a.backupUrl || a.backup_url,
+        allowedCdnHosts,
+      );
+      if (!urls.length) continue;
+      const [url, ...backupUrls] = urls;
       streams.push({
         quality: `${Math.round((a.bandwidth || 0) / 1000)}k`, format: 'mp4', codec: a.codecs || 'aac',
-        url: a.baseUrl || a.base_url,
-        backupUrls: a.backupUrl || a.backup_url || [],
+        url,
+        backupUrls,
         type: 'audio-only', bandwidth: a.bandwidth || 0,
         trackId: a.id || 0,
         // Bilibili omits these fields on the HTML5 DASH response. The AAC-LC

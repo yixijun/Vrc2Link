@@ -7,7 +7,14 @@ import { qualityRank } from './utils/quality.js';
 import { expandShortLink, extractId, identifyPlatform, normalizeSourceUrl } from './utils/url.js';
 
 export async function resolveMedia(rawUrl, options = {}) {
-  const { authenticated = false, cookies = {}, quality, generic = {}, mode = 'single' } = options;
+  const {
+    authenticated = false,
+    cookies = {},
+    quality,
+    generic = {},
+    mode = 'single',
+    bilibiliCdnAllowlist = [],
+  } = options;
   if (!rawUrl?.trim()) {
     throw new AppError(400, 'missing_url', 'Missing required parameter: url');
   }
@@ -58,6 +65,7 @@ export async function resolveMedia(rawUrl, options = {}) {
       resolverPrefix: options.resolverPrefix || '',
       playlistMode: options.playlistMode === true,
       mode,
+      bilibiliCdnAllowlist,
     });
     if (!result.playlist?.length && !result.streams?.some((stream) => stream.url)) {
       throw new Error('No playable streams found');
@@ -121,6 +129,7 @@ async function parsePlatform(platform, extracted, options) {
           ...options,
           page: extracted.page,
           includeSeasonPlaylist: options.playlistMode,
+          cdnAllowlist: options.bilibiliCdnAllowlist,
         });
   }
   if (platform === 'douyin' || platform === 'kuaishou') {

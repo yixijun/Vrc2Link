@@ -246,6 +246,69 @@ test('parseVideo explicitly requests DASH and keeps track metadata', async (t) =
   assert.equal(result.streams.some((stream) => stream.url.includes('should-not-be-used')), false);
 });
 
+test('parseVideo prefers an allowed Bilibili CDN over the primary DASH URL', async (t) => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.includes('/x/web-interface/view')) {
+      return Response.json({
+        code: 0,
+        data: {
+          bvid: 'BVcdnfixture',
+          cid: 987654,
+          title: 'CDN fixture',
+          duration: 91,
+          owner: { name: 'Uploader' },
+          pages: [],
+        },
+      });
+    }
+    if (url.includes('/x/player/playurl')) {
+      return Response.json({
+        code: 0,
+        data: {
+          quality: 80,
+          dash: {
+            video: [{
+              id: 80,
+              baseUrl: 'https://upos-sz-mirrorcosov.bilivideo.com/video.m4s?deadline=1999999999',
+              backupUrl: [
+                'https://upos-sz-mirrorali.bilivideo.com/video.m4s?deadline=1999999999',
+                'https://cn-gddg-ct-01-12.bilivideo.com/video.m4s?deadline=1999999999',
+              ],
+              codecs: 'avc1.640028',
+              width: 1920,
+              height: 1080,
+            }],
+            audio: [{
+              id: 30280,
+              baseUrl: 'https://upos-sz-mirrorcosov.bilivideo.com/audio.m4s?deadline=1999999999',
+              backupUrl: ['https://upos-sz-mirrorali.bilivideo.com/audio.m4s?deadline=1999999999'],
+              codecs: 'mp4a.40.2',
+              bandwidth: 192000,
+            }],
+          },
+        },
+      });
+    }
+    return Response.json({ code: -404, message: 'wrong endpoint' });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const result = await parseVideo('BVcdnfixture', {
+    mode: 'dash',
+    quality: '1080p',
+    cdnAllowlist: ['upos-sz-mirrorali.bilivideo.com'],
+  });
+  const video = result.streams.find((stream) => stream.type === 'video-only');
+  const audio = result.streams.find((stream) => stream.type === 'audio-only');
+
+  assert.equal(video.url, 'https://upos-sz-mirrorali.bilivideo.com/video.m4s?deadline=1999999999');
+  assert.deepEqual(video.backupUrls, []);
+  assert.equal(audio.url, 'https://upos-sz-mirrorali.bilivideo.com/audio.m4s?deadline=1999999999');
+});
+
 test('parseVideo auto mode requests DASH while retaining direct streams as fallback', async (t) => {
   const originalFetch = globalThis.fetch;
   const calls = [];
