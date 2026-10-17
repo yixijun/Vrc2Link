@@ -30,7 +30,7 @@ RATE_LIMIT_AUTH_PER_MINUTE=60
 RATE_LIMIT_IP_PER_MINUTE=120
 RATE_LIMIT_WINDOW_SECONDS=60
 TRUST_PROXY=false
-BILIBILI_CDN_ALLOWLIST=upos-sz-mirror08c.bilivideo.com,upos-sz-mirrorali.bilivideo.com,upos-sz-mirrorhw.bilivideo.com,upos-sz-mirrorcos.bilivideo.com
+BILIBILI_CDN_ALLOWLIST=upos-sz-mirror08c.bilivideo.com,upos-sz-mirrorali.bilivideo.com,upos-sz-mirrorhw.bilivideo.com,upos-sz-mirrorcos.bilivideo.com,upos-sz-mirrorcoso1.bilivideo.com,upos-sz-estgcos.bilivideo.com
 PLAYLIST_RESOLVER_PREFIX=https://vrc2link.luonako.cn/api/v1/play?mode=auto&url=
 PLAYLIST_SESSION_TTL_SECONDS=21600
 PUBLIC_BASE_URL=https://vrc2link.luonako.cn
@@ -117,7 +117,7 @@ GENERIC_RESOLVER_MAX_CONCURRENT=2
 | `RATE_LIMIT_AUTH_PER_MINUTE` | 每个 API key 每窗口请求数，默认 `60` |
 | `RATE_LIMIT_IP_PER_MINUTE` | 每个 IP 的总请求数，默认 `120` |
 | `RATE_LIMIT_WINDOW_SECONDS` | 限流窗口秒数，默认 `60` |
-| `BILIBILI_CDN_ALLOWLIST` | Bilibili 视频允许使用的 CDN 主机名，逗号分隔并按顺序优先；默认使用 08c、阿里、华为、腾讯镜像 |
+| `BILIBILI_CDN_ALLOWLIST` | Bilibili 视频允许使用的 CDN 主机名，逗号分隔并按顺序优先；默认使用 08c、阿里、华为、腾讯及腾讯备用镜像 |
 | `GENERIC_RESOLVER_ENABLED` | 是否启用通用视频网站解析，默认 `false` |
 | `GENERIC_RESOLVER_REQUIRE_KEY` | 通用解析是否要求正确 API key，默认 `true` |
 | `YT_DLP_PATH` | `yt-dlp` 命令或绝对路径 |

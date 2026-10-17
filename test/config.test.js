@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { mergeConfig, parseConfigFile } from '../src/config.js';
+import { DEFAULT_BILIBILI_CDN_ALLOWLIST, loadConfig, mergeConfig, parseConfigFile } from '../src/config.js';
 
 test('parseConfigFile preserves complete cookie header values', () => {
   const config = parseConfigFile(`
@@ -46,4 +46,13 @@ test('environment variables override file config without empty PM2 values erasin
   assert.equal(config.TRUST_PROXY, 'true');
   assert.equal(config.GENERIC_RESOLVER_ENABLED, 'true');
   assert.equal(config.YT_DLP_PATH, '/usr/local/bin/yt-dlp');
+});
+
+test('loadConfig provides the compatible Bilibili CDN defaults', () => {
+  const config = loadConfig({
+    workingDirectory: process.cwd(),
+    environment: { CONFIG_FILE: '__missing_cdn_defaults_test__.env' },
+  });
+
+  assert.equal(config.BILIBILI_CDN_ALLOWLIST, DEFAULT_BILIBILI_CDN_ALLOWLIST.join(','));
 });

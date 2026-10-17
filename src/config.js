@@ -7,6 +7,8 @@ export const DEFAULT_BILIBILI_CDN_ALLOWLIST = [
   'upos-sz-mirrorali.bilivideo.com',
   'upos-sz-mirrorhw.bilivideo.com',
   'upos-sz-mirrorcos.bilivideo.com',
+  'upos-sz-mirrorcoso1.bilivideo.com',
+  'upos-sz-estgcos.bilivideo.com',
 ];
 
 const CONFIG_KEYS = [
