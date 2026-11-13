@@ -86,14 +86,20 @@ function youtubeVideoId(target) {
     url.pathname.match(/^\/(?:shorts|embed|live)\/([^/]+)/i)?.[1] || '';
 }
 
-export function selectPlayableStream(result, targetQuality) {
+export function selectPlayableStream(result, targetQuality, options = {}) {
+  const requireMp4 = options.requireMp4 === true;
+  const allowQualityFallback = options.allowQualityFallback === true;
   let candidates = result.streams.filter((stream) =>
-    stream.url && stream.type !== 'video-only' && stream.type !== 'audio-only'
+    stream.url && stream.type !== 'video-only' && stream.type !== 'audio-only' &&
+    (!requireMp4 || String(stream.format || '').toLowerCase() === 'mp4')
   );
 
   if (targetQuality) {
-    candidates = candidates.filter((stream) => stream.quality === targetQuality);
-    if (candidates.length === 0) {
+    const requested = candidates.filter((stream) => stream.quality === targetQuality);
+    if (requested.length > 0 || !allowQualityFallback) {
+      candidates = requested;
+    }
+    if (candidates.length === 0 && !allowQualityFallback) {
       throw new AppError(
         422,
         'quality_unavailable',
@@ -103,7 +109,11 @@ export function selectPlayableStream(result, targetQuality) {
   }
 
   if (candidates.length === 0) {
-    throw new AppError(422, 'no_direct_stream', 'No directly playable combined stream is available');
+    throw new AppError(422, requireMp4
+      ? 'no_muxed_mp4'
+      : 'no_direct_stream', requireMp4
+      ? 'No directly playable combined MP4 stream is available'
+      : 'No directly playable combined stream is available');
   }
 
   candidates.sort((a, b) => {

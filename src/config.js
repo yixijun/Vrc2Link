@@ -11,6 +11,37 @@ export const DEFAULT_BILIBILI_CDN_PREFERENCE = [
   'upos-sz-estgcos.bilivideo.com',
 ];
 export const DEFAULT_BILIBILI_CDN_ALLOWLIST = DEFAULT_BILIBILI_CDN_PREFERENCE;
+export const DEFAULT_PLAYLIST_RESOLVER_PREFIX = `${DEFAULT_PUBLIC_BASE_URL}/api/v1/play?mode=auto&url=`;
+
+// Keep operational defaults in one place. The request layer still accepts a
+// partial environment object in tests and embedded deployments, but the
+// process entry point now receives a complete configuration after loadConfig.
+export const DEFAULT_CONFIG = {
+  PORT: '7890',
+  SQLITE_PATH: 'data/vrc2link.sqlite',
+  CACHE_TTL_SECONDS: '300',
+  RATE_LIMIT_ANON_PER_MINUTE: '10',
+  RATE_LIMIT_AUTH_PER_MINUTE: '60',
+  RATE_LIMIT_IP_PER_MINUTE: '120',
+  RATE_LIMIT_WINDOW_SECONDS: '60',
+  DANMAKU_RATE_LIMIT_PER_MINUTE: '90',
+  DANMAKU_SESSION_TTL_SECONDS: '21600',
+  DANMAKU_MAX_VIDEO_MESSAGES: '300',
+  DANMAKU_MAX_LIVE_MESSAGES: '30',
+  GENERIC_RESOLVER_ENABLED: 'false',
+  GENERIC_RESOLVER_REQUIRE_KEY: 'true',
+  YT_DLP_PATH: 'yt-dlp',
+  GENERIC_RESOLVER_TIMEOUT_MS: '20000',
+  GENERIC_RESOLVER_MAX_CONCURRENT: '2',
+  PLAYLIST_RESOLVER_PREFIX: DEFAULT_PLAYLIST_RESOLVER_PREFIX,
+  PLAYLIST_SESSION_TTL_SECONDS: '21600',
+  PUBLIC_BASE_URL: DEFAULT_PUBLIC_BASE_URL,
+  DASH_TICKET_TTL_SECONDS: '3600',
+  PLAYBACK_TICKET_TTL_SECONDS: '3600',
+  QUEST_STREAM_PROXY: 'false',
+  TRUST_PROXY: 'false',
+  LEGACY_PLAYLIST_ENDPOINTS: 'true',
+};
 
 const CONFIG_KEYS = [
   'PORT', 'API_KEY', 'BILIBILI_COOKIE', 'NETEASE_COOKIE', 'DOUYIN_COOKIE', 'KUAISHOU_COOKIE',
@@ -23,7 +54,7 @@ const CONFIG_KEYS = [
   'GENERIC_RESOLVER_TIMEOUT_MS', 'GENERIC_RESOLVER_MAX_CONCURRENT',
   'PLAYLIST_RESOLVER_PREFIX',
   'PUBLIC_BASE_URL', 'DASH_TICKET_TTL_SECONDS', 'CK_MASTER_KEY', 'PLAYBACK_TICKET_TTL_SECONDS',
-  'QUEST_STREAM_PROXY',
+  'QUEST_STREAM_PROXY', 'LEGACY_PLAYLIST_ENDPOINTS',
 ];
 
 export function parseConfigFile(text) {
@@ -76,7 +107,11 @@ export function loadConfig(options = {}) {
     }
   }
 
-  const config = mergeConfig(fileConfig, environment);
+  const merged = mergeConfig(fileConfig, environment);
+  const config = { ...DEFAULT_CONFIG, ...merged };
+  if (!Object.hasOwn(merged, 'PLAYLIST_RESOLVER_PREFIX') && Object.hasOwn(merged, 'PUBLIC_BASE_URL')) {
+    config.PLAYLIST_RESOLVER_PREFIX = `${String(config.PUBLIC_BASE_URL).trim().replace(/\/+$/u, '')}/api/v1/play?mode=auto&url=`;
+  }
   if (!String(config.BILIBILI_CDN_PREFERENCE || config.BILIBILI_CDN_ALLOWLIST || '').trim()) {
     config.BILIBILI_CDN_PREFERENCE = DEFAULT_BILIBILI_CDN_PREFERENCE.join(',');
   }

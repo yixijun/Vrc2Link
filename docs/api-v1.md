@@ -91,7 +91,7 @@ VizVid 的本机设置面板使用 `GET /api/v1/playback-tickets/resolve`。它�
 
 ### 媒体解析与播放
 
-`url` 是必填的 HTTP(S) 平台链接或分享文本，必须按 URL 查询参数规则编码。`mode` 可选值为 `single`、`dash`、`auto`，默认 `single`。`quality` 是可选的精确画质。`auto` 会优先为 Bilibili 视频选择兼容的 DASH 音视频轨；上游没有可用 DASH 轨时，回落到匹配所选画质的单文件流。其他受支持平台使用单流。指定画质不可用时返回 `422`，不会静默切换到其他画质。
+`url` 是必填的 HTTP(S) 平台链接或分享文本，必须按 URL 查询参数规则编码。`mode` 可选值为 `single`、`dash`、`auto`，默认 `single`。默认单流模式只返回音视频合一的 MP4；`quality` 只是优先级提示，指定画质不存在时会选择其他可用 MP4。`auto` 会优先为 Bilibili 视频选择兼容的 DASH 音视频轨；上游没有可用 DASH 轨时，回落到可用的合并 MP4。其他受支持平台使用单流。没有合并 MP4 时返回 `422`。
 
 ```text
 GET /api/v1/media/resolve?url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV...
@@ -129,7 +129,7 @@ Authorization: Bearer YOUR_API_KEY
 | `404` | `not_found`、`dash_ticket_not_found`、`playback_ticket_not_found` | 路径或票据不存在/过期 |
 | `405` | `method_not_allowed` | 使用了不支持的方法 |
 | `409` | `no_playlist_session`、`no_danmaku_session`、`playlist_session_pending` | 当前会话尚未建立或状态冲突 |
-| `422` | `quality_unavailable`、`not_a_playlist`、`danmaku_unsupported` | 请求有效，但当前内容无法提供该功能 |
+| `422` | `quality_unavailable`、`no_muxed_mp4`、`not_a_playlist`、`danmaku_unsupported` | 请求有效，但当前内容无法提供该功能 |
 | `429` | `rate_limited` | 超出请求额度；按 `Retry-After` 重试 |
 | `502` | `upstream_error`、`dash_track_unavailable` | 上游平台或媒体源失败 |
 | `503` | `state_unavailable`、`credential_encryption_unavailable`、`credential_decryption_failed` | 服务端存储或 CK 加密配置不可用 |
@@ -138,4 +138,4 @@ Authorization: Bearer YOUR_API_KEY
 
 ## 兼容策略
 
-原有 `/api`、`/play`、`/playlist`、`/playlist/current`、`/playlist/current/item/{index}`、`/danmaku/current` 与 `/dash/{ticket}/...` 路径继续作为兼容入口。兼容入口维持旧 JSON 结构；从新客户端迁移时请使用 `/api/v1` 和本文的信封格式。早期 `/api?playlist=1` 与 `/api?playlistItem=N` 已停用并返回 `410`。
+原有 `/api`、`/play`、`/playlist`、`/playlist/current`、`/playlist/current/item/{index}`、`/danmaku/current` 与 `/dash/{ticket}/...` 路径继续作为兼容入口。兼容入口维持旧 JSON 结构；从新客户端迁移时请使用 `/api/v1` 和本文的信封格式。为兼容现有 Unity 场景，`/api?playlist=1` 与 `/api?playlistItem=N` 默认映射到当前播放列表会话；设置 `LEGACY_PLAYLIST_ENDPOINTS=false` 后才会停用并返回 `410`。

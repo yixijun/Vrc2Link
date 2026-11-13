@@ -33,6 +33,7 @@ TRUST_PROXY=false
 BILIBILI_CDN_PREFERENCE=upos-sz-mirror08c.bilivideo.com,upos-sz-mirrorali.bilivideo.com,upos-sz-mirrorhw.bilivideo.com,upos-sz-mirrorcos.bilivideo.com,upos-sz-mirrorcoso1.bilivideo.com,upos-sz-estgcos.bilivideo.com
 PLAYLIST_RESOLVER_PREFIX=https://vrc2link.luonako.cn/api/v1/play?mode=auto&url=
 PLAYLIST_SESSION_TTL_SECONDS=21600
+LEGACY_PLAYLIST_ENDPOINTS=true
 PUBLIC_BASE_URL=https://vrc2link.luonako.cn
 DASH_TICKET_TTL_SECONDS=3600
 CK_MASTER_KEY=64-位十六进制随机密钥
@@ -124,6 +125,7 @@ GENERIC_RESOLVER_MAX_CONCURRENT=2
 | `GENERIC_RESOLVER_TIMEOUT_MS` | 单次通用解析超时毫秒数，默认 `20000` |
 | `GENERIC_RESOLVER_MAX_CONCURRENT` | 通用解析最大并发进程数，默认 `2` |
 | `PLAYLIST_SESSION_TTL_SECONDS` | 合集/歌单会话保留秒数，默认 `21600` |
+| `LEGACY_PLAYLIST_ENDPOINTS` | 是否兼容旧 Unity 使用的 `/api?playlist=1` 与 `/api?playlistItem=N`，默认 `true`；迁移完成后可设为 `false` |
 | `PUBLIC_BASE_URL` | 生成播放票据和 DASH URL 使用的公开站点根地址；未设置时默认为 `https://vrc2link.luonako.cn`，自托管时可覆盖 |
 | `DASH_TICKET_TTL_SECONDS` | DASH ticket 保留秒数，默认 `3600` |
 | `CK_MASTER_KEY` | 自助 CK 功能必需的 64 位十六进制 AES-256 主密钥，只能保存在服务端配置中 |
@@ -175,7 +177,7 @@ GENERIC_RESOLVER_MAX_CONCURRENT=2
 
 `/play` 只返回到媒体或 MPD 的 `302` 跳转，不把合集 JSON 交给播放器。传入合集链接时，会直接播放合集当前项；没有当前项时播放第一项。合集清单由单独的 `/playlist` 接口提供。
 
-不传 `quality` 时，单流模式选择最高可播放画质；指定画质不存在时返回 `422`，不会静默降级。新客户端应改用 `/api/v1/play`，其 JSON 错误响应含 `error` 与 `meta`。
+默认单流模式只返回音视频合一的 MP4 文件；优先使用请求画质，没有该画质时自动选择其他可用 MP4，画质不作为失败条件。上游只有视频轨、音频轨或 DASH 分离流而没有合并 MP4 时返回 `422`。新客户端应改用 `/api/v1/play`，其 JSON 错误响应含 `error` 与 `meta`。
 
 Bilibili 的 1080p、4K、8K 通常是 DASH 音视频分离流，而 `/play` 只跳转到一个带声音的可播放文件，不负责服务器合并。因此多数 B 站视频的直接播放上限是 720p。Cookie 只能解锁账号权限，不能把 DASH 转换成单文件；`/api` 中应以 `streams` 判断实际取得的直链。
 
@@ -184,7 +186,7 @@ Bilibili 的 1080p、4K、8K 通常是 DASH 音视频分离流，而 `/play` 只
 /play?key=YOUR_KEY&quality=1080p&url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV1xx411c7mD
 ```
 
-VizVid 使用 `mode=auto`：Bilibili 视频优先跳转到兼容的 DASH MPD；上游只提供单文件流或没有可用 DASH 轨时，会回落到匹配所选画质的单文件流。其他支持的平台继续跳转到单媒体流。Unity 世界默认请求 1080p；其他客户端可以省略画质，让服务器选择最高的 H.264/AAC DASH 轨道。指定画质不可用时会明确报错，不会静默换画质。
+VizVid 使用 `mode=auto`：Bilibili 视频优先跳转到兼容的 DASH MPD；上游只提供单文件流或没有可用 DASH 轨时，会回落到可用的音视频合一 MP4。其他支持的平台继续跳转到单媒体流。Unity 世界默认请求 1080p，但画质不可用时允许选择其他 MP4；没有合并 MP4 才会报错。
 
 ```text
 /api/v1/play?mode=auto&quality=1080p&url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV1xx411c7mD
@@ -193,6 +195,8 @@ VizVid 使用 `mode=auto`：Bilibili 视频优先跳转到兼容的 DASH MPD；�
 ### DASH 单播放器验证
 
 Bilibili 1080p 及以上通常是 DASH 音视频分离流。`/play` 默认仍只选择带声音的单文件；需要验证标准 DASH 播放器时，使用明确的 `mode=dash`：
+
+DASH 代码作为 beta 播放策略独立维护，主解析默认保持单流行为；只有明确的 `mode=dash`，或 `mode=auto` 确认存在可用音视频轨时，才会进入 DASH 票据和 MPD 链路。
 
 ```text
 /play?mode=dash&quality=1080p&url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV1xx411c7mD
@@ -225,7 +229,7 @@ Unity 中的独立“合集 / 歌单”面板使用两个不需要运行时拼�
 /api/v1/playlists/current/items/0
 ```
 
-玩家先通过 `/api/v1/play` 打开 Bilibili 视频、Bilibili 合集或网易云歌单。服务器按客户端 IP 保存最近的合集会话；`/api/v1/playlists/current` 返回标题、条目名称、当前索引和 `autoPlay`，`/api/v1/playlists/current/items/N` 解析第 N 项并直接 `302` 到媒体或 MPD。直接打开合集/歌单时 `autoPlay=true`，从正在播放的 Bilibili 视频发现合集时为 `false`，不会打断当前视频。旧的 `/api?playlist=1` 和 `/api?playlistItem=N` 返回 `410`，提示使用新路径。
+玩家先通过 `/api/v1/play` 打开 Bilibili 视频、Bilibili 合集或网易云歌单。服务器按客户端 IP 保存最近的合集会话；`/api/v1/playlists/current` 返回标题、条目名称、当前索引和 `autoPlay`，`/api/v1/playlists/current/items/N` 解析第 N 项并直接 `302` 到媒体或 MPD。直接打开合集/歌单时 `autoPlay=true`，从正在播放的 Bilibili 视频发现合集时为 `false`，不会打断当前视频。为兼容现有 Unity 场景，旧的 `/api?playlist=1` 和 `/api?playlistItem=N` 默认继续路由到当前会话；迁移完成后设置 `LEGACY_PLAYLIST_ENDPOINTS=false` 会返回 `410`，再切换到新路径。
 
 ## 安全
 

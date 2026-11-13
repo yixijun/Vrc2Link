@@ -8,23 +8,24 @@ const HOME_HTML = `<!doctype html>
   <style>
     :root {
       color-scheme: light dark;
-      --page: #f5f5f7;
+      --page: #eef1f8;
       --surface: #ffffff;
-      --surface-raised: rgba(255, 255, 255, 0.82);
-      --surface-soft: #f0f0f2;
-      --label: #1d1d1f;
-      --secondary: #6e6e73;
-      --tertiary: #8e8e93;
-      --separator: rgba(60, 60, 67, 0.16);
-      --separator-strong: rgba(60, 60, 67, 0.28);
-      --blue: #007aff;
-      --blue-pressed: #0066d6;
-      --green: #248a3d;
-      --orange: #c93400;
-      --code: #1d1d1f;
+      --surface-raised: rgba(255, 255, 255, 0.9);
+      --surface-soft: #f6f7fb;
+      --label: #111827;
+      --secondary: #5b6475;
+      --tertiary: #8b95a7;
+      --separator: rgba(15, 23, 42, 0.12);
+      --separator-strong: rgba(15, 23, 42, 0.22);
+      --blue: #5b5ce2;
+      --blue-pressed: #4647c7;
+      --green: #16845b;
+      --orange: #c56a18;
+      --code: #151a2c;
       --code-label: #f5f5f7;
-      --focus: rgba(0, 122, 255, 0.24);
-      --shadow: 0 14px 38px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+      --focus: rgba(91, 92, 226, 0.24);
+      --shadow: 0 24px 60px rgba(52, 59, 105, 0.12), 0 3px 12px rgba(15, 23, 42, 0.05);
+      --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
     }
 
     * { box-sizing: border-box; }
@@ -525,6 +526,105 @@ const HOME_HTML = `<!doctype html>
     @media (prefers-contrast: more) {
       .topbar, .request-builder, input, select, .paste-button { border-color: currentColor; }
     }
+    /* Final polish: stronger hierarchy, quieter chrome, and touch-friendly controls. */
+    body {
+      background:
+        radial-gradient(circle at 8% -12%, rgba(139, 124, 255, 0.18), transparent 30rem),
+        radial-gradient(circle at 92% 4%, rgba(69, 201, 180, 0.12), transparent 26rem),
+        var(--page);
+    }
+    .topbar {
+      min-height: 64px;
+      background: rgba(250, 251, 255, 0.78);
+      border-bottom: 1px solid var(--separator);
+      box-shadow: 0 10px 26px rgba(44, 52, 92, 0.06);
+    }
+    .topbar-inner { min-height: 64px; }
+    .brand { gap: 10px; font-size: 16px; font-weight: 720; }
+    .brand-mark {
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
+      background: linear-gradient(145deg, #7778f2, #4c4dc9);
+      font-size: 10px;
+    }
+    .status {
+      padding: 7px 10px;
+      border: 1px solid rgba(22, 132, 91, 0.18);
+      border-radius: 999px;
+      background: rgba(22, 132, 91, 0.08);
+    }
+    .workspace-band { padding: 64px 0 78px; }
+    .workspace-heading { gap: 34px; margin-bottom: 32px; }
+    .eyebrow { letter-spacing: 0.12em; }
+    h1 { font-size: clamp(36px, 5vw, 56px); font-weight: 760; letter-spacing: -0.04em; }
+    .lead { max-width: 600px; margin-top: 12px; font-size: 16px; }
+    .route-summary {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-self: stretch;
+      width: min(100%, 440px);
+      gap: 8px;
+    }
+    .route-row {
+      min-width: 0;
+      padding: 10px 12px;
+      border-radius: 11px;
+      background: rgba(255, 255, 255, 0.58);
+      transition: transform 160ms var(--ease-out), border-color 160ms ease-out, box-shadow 160ms ease-out;
+    }
+    .route-row .method { letter-spacing: 0.08em; }
+    .request-builder { border-radius: 18px; animation-timing-function: var(--ease-out); }
+    .builder-form, .builder-side { padding: 34px; }
+    .builder-side { background: linear-gradient(180deg, rgba(246, 247, 251, 0.9), rgba(255, 255, 255, 0.46)); }
+    .panel-title { margin-bottom: 22px; font-size: 15px; font-weight: 720; }
+    .field { margin-bottom: 21px; }
+    input[type="text"], input[type="url"], input[type="password"], input[type="number"], select {
+      min-height: 46px;
+      padding: 10px 13px;
+      border-radius: 10px;
+      transition: border-color 160ms ease-out, box-shadow 160ms ease-out, background 160ms ease-out, transform 160ms var(--ease-out);
+    }
+    .paste-button { min-height: 46px; border-radius: 0 10px 10px 0; }
+    .segment { border-radius: 10px; }
+    .segment label { border-radius: 8px; transition: background 160ms var(--ease-out), color 160ms ease-out, box-shadow 160ms ease-out, transform 120ms ease-out; }
+    .request-preview { border-radius: 11px; }
+    button { border-radius: 11px; transition: background 160ms ease-out, transform 120ms ease-out, box-shadow 160ms ease-out; }
+    button:active { transform: scale(0.97); }
+    .docs-band, .plain-band { padding-top: 76px; padding-bottom: 76px; }
+    .endpoint {
+      margin-bottom: 14px;
+      padding: 26px 28px;
+      border: 1px solid var(--separator);
+      border-radius: 16px;
+      background: var(--surface-raised);
+      box-shadow: 0 10px 28px rgba(52, 59, 105, 0.05);
+    }
+    .endpoint:last-child { margin-bottom: 0; }
+    .compat-note { border-radius: 0 10px 10px 0; }
+    .credential-card { border-radius: 16px; box-shadow: 0 16px 38px rgba(52, 59, 105, 0.08); }
+    @media (hover: hover) and (pointer: fine) {
+      .route-row:hover { transform: translateY(-2px); border-color: rgba(91, 92, 226, 0.35); box-shadow: 0 8px 18px rgba(52, 59, 105, 0.08); }
+    }
+
+    @media (max-width: 820px) {
+      .workspace-band { padding-top: 44px; }
+      .route-summary { width: 100%; }
+      .builder-form, .builder-side { padding: 26px; }
+    }
+    @media (max-width: 520px) {
+      .workspace-band { padding: 34px 0 48px; }
+      .docs-band, .plain-band { padding: 52px 0; }
+      .builder-form, .builder-side { padding: 20px; }
+      .route-summary { grid-template-columns: 1fr 1fr; }
+    }
+    @media (prefers-color-scheme: dark) {
+      .topbar { background: rgba(18, 18, 19, 0.78); }
+      .builder-side { background: linear-gradient(180deg, rgba(44, 44, 46, 0.88), rgba(28, 28, 30, 0.58)); }
+      .route-row { background: rgba(44, 44, 46, 0.62); }
+      .endpoint { background: var(--surface-raised); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.24); }
+      .credential-card { box-shadow: 0 16px 38px rgba(0, 0, 0, 0.28); }
+    }
   </style>
 </head>
 <body>
@@ -581,13 +681,14 @@ const HOME_HTML = `<!doctype html>
             <fieldset>
               <legend>请求模式</legend>
               <div class="segment">
-                <input id="mode-api" type="radio" name="mode" value="api" checked>
+                <input id="mode-api" type="radio" name="mode" value="api">
                 <label for="mode-api">详细解析</label>
-                <input id="mode-play" type="radio" name="mode" value="play">
-                <label for="mode-play">直接播放</label>
+                <input id="mode-play" type="radio" name="mode" value="play" checked>
+                <label for="mode-play">MP4 播放</label>
                 <input id="mode-dash" type="radio" name="mode" value="dash">
-                <label for="mode-dash">DASH 播放</label>
+                <label for="mode-dash">DASH beta</label>
               </div>
+              <p class="field-help" id="mode-help">默认只返回音视频合一的 MP4；画质不可用时自动选择其他 MP4。</p>
             </fieldset>
 
             <div class="field">
@@ -709,18 +810,18 @@ const HOME_HTML = `<!doctype html>
             <p>302 Redirect</p>
           </div>
           <div class="endpoint-copy">
-            <p>直接 302 到媒体或 MPD。合集链接会播放当前项或第一项；合集清单使用独立的 <code>/api/v1/playlists</code> 接口。不指定画质时选择最高可播放画质。</p>
+            <p>默认直接 302 到音视频合一的 MP4；只有 beta DASH 模式才会返回 MPD。合集链接会播放当前项或第一项；合集清单使用独立的 <code>/api/v1/playlists</code> 接口。不指定画质时选择最高可用 MP4。</p>
             <table>
               <thead><tr><th>参数</th><th>必填</th><th>说明</th></tr></thead>
               <tbody>
                 <tr><td><code>url</code></td><td>是</td><td>媒体地址或复制的平台分享文本</td></tr>
-                <tr><td><code>quality</code></td><td>否</td><td>精确画质，不存在时返回 422</td></tr>
+                <tr><td><code>quality</code></td><td>否</td><td>优先画质；不存在时选择其他合并 MP4</td></tr>
                 <tr><td><code>key</code></td><td>否</td><td>启用服务器 Cookie 权限</td></tr>
               </tbody>
             </table>
             <div class="compat-note">
-              <strong>为什么 1080p 会返回 422？</strong>
-              <code>/api/v1/play</code> 只做一次 302，不在服务器上合并 DASH 音视频。目标画质只有分离流时返回标准错误信封和 <code>quality_unavailable</code>，不会静默降级或返回无声视频。
+              <strong>为什么没有返回 1080p？</strong>
+              <code>/api/v1/play</code> 只做一次 302，不在服务器上合并 DASH 音视频。默认模式只返回音视频合一的 MP4；目标画质不存在时会选择其他 MP4，没有合并 MP4 才返回 <code>no_muxed_mp4</code>。
             </div>
             <pre><code>GET /api/v1/play?quality=720p&amp;url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV...</code></pre>
           </div>
@@ -824,7 +925,7 @@ TRUST_PROXY=false</code></pre>
         <div class="error-list">
           <div class="error-item"><strong>400</strong><span>地址缺失或无法识别</span></div>
           <div class="error-item"><strong>401</strong><span>访问密钥错误</span></div>
-          <div class="error-item"><strong>422</strong><span>指定画质不可用</span></div>
+          <div class="error-item"><strong>422</strong><span>没有可用的音视频合一 MP4</span></div>
           <div class="error-item"><strong>429</strong><span>请求频率超过限额</span></div>
           <div class="error-item"><strong>502</strong><span>平台接口解析失败</span></div>
         </div>
@@ -843,6 +944,7 @@ TRUST_PROXY=false</code></pre>
     const apiKey = document.getElementById('api-key');
     const quality = document.getElementById('quality');
     const qualityHelp = document.getElementById('quality-help');
+    const modeHelp = document.getElementById('mode-help');
     const platformHint = document.getElementById('platform-hint');
     const preview = document.getElementById('request-preview');
     const pasteButton = document.getElementById('paste-media');
@@ -853,11 +955,11 @@ TRUST_PROXY=false</code></pre>
       bilibiliVideo: {
         platform: 'bilibili',
         label: '已识别：Bilibili 视频',
-        help: '1080p 及以上通常是 DASH 音视频分离流；多数视频可直接播放的单文件最高为 720p。',
+        help: '默认只播放音视频合一的 MP4；指定画质不可用时自动选择其他可用 MP4。DASH 作为 beta 模式单独验证。',
         qualities: [
           ['', '自动选择'], ['360p', '360p'], ['480p', '480p'], ['720p', '720p'],
-          ['1080p', '1080p（通常需要合并）'], ['4k', '4k（通常需要合并）'],
-          ['8k', '8k（通常需要合并）'],
+          ['1080p', '1080p（优先）'], ['4k', '4K（优先）'],
+          ['8k', '8K（优先）'],
         ],
       },
       bilibiliLive: {
@@ -1000,6 +1102,7 @@ TRUST_PROXY=false</code></pre>
       request.searchParams.set('url', mediaUrl.value.trim());
       if (apiKey.value) request.searchParams.set('key', apiKey.value);
       if (dash) request.searchParams.set('mode', 'dash');
+      else if (selectedMode() === 'play') request.searchParams.set('mode', 'single');
       if ((selectedMode() === 'play' || dash) && quality.value) request.searchParams.set('quality', quality.value);
       return request.href;
     }
@@ -1007,6 +1110,13 @@ TRUST_PROXY=false</code></pre>
     function updatePreview() {
       updateMediaOptions();
       quality.disabled = selectedMode() !== 'play' && selectedMode() !== 'dash';
+      if (selectedMode() === 'dash') {
+        modeHelp.textContent = 'DASH beta：仅用于验证分离音视频轨和 MPD，不能代表 VRChat 客户端已稳定支持。';
+      } else if (selectedMode() === 'play') {
+        modeHelp.textContent = '默认只返回音视频合一的 MP4；画质不可用时自动选择其他 MP4。';
+      } else {
+        modeHelp.textContent = '返回解析 JSON；实际播放请使用 MP4 播放模式。';
+      }
       const requestUrl = buildRequestUrl();
       preview.textContent = requestUrl || '等待输入媒体链接';
     }

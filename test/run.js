@@ -10,3 +10,4 @@ import './playlist.test.js';
 import './dash.test.js';
 import './api-v1.test.js';
 import './credentials.test.js';
+import './backend-refactor.test.js';

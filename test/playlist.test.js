@@ -37,6 +37,31 @@ test('Bilibili playlist parser returns resolver URLs', async (t) => {
   assert.equal(result.playlist[0].title, '\u7b2c\u4e00\u96c6');
   assert.equal(result.playlist[0].url, 'https://vrc2link.example/play?url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBVfixture1');
 });
+
+test('Bilibili collection parser selects the bvid from the source URL instead of the first item', async (t) => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === '/x/web-interface/view') {
+      return Response.json({ code: 0, data: { owner: { mid: 123 } } });
+    }
+    assert.match(url.pathname, /seasons_archives_list/u);
+    return Response.json({ code: 0, data: { archives: [
+      { bvid: 'BVfirst', title: '第一项' },
+      { bvid: 'BVcurrent', title: '当前播放' },
+    ] } });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const result = await parseBilibiliPlaylist(
+    { id: '455', kind: 'collection', bvid: 'BVcurrent' },
+    { resolverPrefix: 'https://vrc2link.example/play?url=' },
+  );
+
+  assert.deepEqual(result.playlist.map((item) => item.id), ['BVfirst', 'BVcurrent']);
+  assert.equal(result.currentIndex, 1);
+});
+
 test('Bilibili playlist parser follows collection pagination', async (t) => {
   const originalFetch = globalThis.fetch;
   const pages = [];

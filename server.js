@@ -4,17 +4,17 @@ import { Readable } from 'node:stream';
 
 import { getClientIp } from './src/client-ip.js';
 import { loadConfig } from './src/config.js';
+import { createRuntimeConfig } from './src/runtime-config.js';
 import { handleRequest } from './src/index.js';
 import { createSqliteState } from './src/state.js';
 
-const config = loadConfig();
-const parsedPort = Number.parseInt(config.PORT || '7890', 10);
-const port = Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : 7890;
-const sqlitePath = resolve(process.cwd(), config.SQLITE_PATH || 'data/vrc2link.sqlite');
+const config = createRuntimeConfig(loadConfig());
+const port = config.PORT;
+const sqlitePath = resolve(process.cwd(), config.SQLITE_PATH);
 const state = createSqliteState(sqlitePath);
 const cleanupTimer = setInterval(() => state.purgeExpired(), 60_000);
 cleanupTimer.unref();
-const trustProxy = String(config.TRUST_PROXY).toLowerCase() === 'true';
+const trustProxy = config.TRUST_PROXY;
 const logger = (entry) => console.log(JSON.stringify({
   timestamp: new Date().toISOString(),
   ...entry,

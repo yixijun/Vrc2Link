@@ -33,6 +33,8 @@ test('only the new API endpoints are exposed', async () => {
   assert.match(html, /<title>Vrc2Link API<\/title>/);
   assert.match(html, /id="request-builder"/);
   assert.match(html, /id="paste-media"/);
+  assert.match(html, /MP4 播放/u);
+  assert.match(html, /DASH beta/u);
   assert.match(html, /<code>\/api\/v1\/media\/resolve<\/code>/);
   assert.match(html, /<code>\/api\/v1\/play<\/code>/);
   assert.match(html, /<code>\/api\/v1\/openapi\.yaml<\/code>/);
@@ -41,7 +43,7 @@ test('only the new API endpoints are exposed', async () => {
   assert.match(html, /Bilibili 高画质密钥/u);
   assert.match(html, /保存天数（1–365）/u);
   assert.match(html, /create-playback-ticket/u);
-  assert.match(html, /为什么 1080p 会返回 422/);
+  assert.match(html, /为什么没有返回 1080p/);
   assert.match(html, /生产运行状态保存在本机 SQLite/);
   assert.match(html, /429 rate_limited/);
   assert.match(html, /function detectMedia\(input\)/);
@@ -75,6 +77,7 @@ test('only the new API endpoints are exposed', async () => {
     'api-key': createControl(),
     quality: createControl(),
     'quality-help': createControl(),
+    'mode-help': createControl(),
     'platform-hint': createControl(),
     'request-preview': createControl(),
     'paste-media': createControl(),
@@ -232,7 +235,7 @@ test('a valid key enables server cookies and an invalid key returns 401', async 
   assert.equal((await invalid.json()).error.code, 'invalid_key');
 });
 
-test('/play redirects to the exact requested quality', async () => {
+test('/play prefers the requested quality but falls back to a muxed MP4', async () => {
   const resolve = async () => MEDIA;
   const selected = await handleRequest(
     new Request(`http://localhost/play?quality=360p&url=${encodeURIComponent(SOURCE_URL)}`),
@@ -247,8 +250,9 @@ test('/play redirects to the exact requested quality', async () => {
     new Request(`http://localhost/play?quality=1080p&url=${encodeURIComponent(SOURCE_URL)}`),
     { resolve },
   );
-  assert.equal(unavailable.status, 422);
-  assert.equal((await unavailable.json()).error.code, 'quality_unavailable');
+  assert.equal(unavailable.status, 302);
+  assert.equal(unavailable.headers.get('location'), 'https://cdn.example/720.mp4');
+  assert.equal(unavailable.headers.get('x-stream-quality'), '720p');
 });
 
 test('/play mode=auto falls back to a Bilibili direct stream when DASH is missing', async (t) => {

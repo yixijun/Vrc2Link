@@ -444,7 +444,7 @@ components:
       name: quality
       in: query
       required: false
-      description: Exact requested quality. Unavailable qualities return 422 without silent fallback.
+      description: Preferred quality for the muxed MP4 stream. If unavailable, another muxed MP4 quality may be selected; 422 is returned only when no muxed MP4 exists.
       schema:
         type: string
     Ticket:
